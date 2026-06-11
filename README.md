@@ -144,6 +144,63 @@ echo "ANTHROPIC_API_KEY=sk-ant-xxxx" > .env
 # Opción 3: ingresarla en el sidebar de la app
 ```
 
+### Harness de agentes externos y parametrización
+
+Los modos Designer incluyen un panel **Harness de agentes externos y cálculo local**.
+Sirve para crear una tarea portable en `runs/agent_tasks/<task_id>/` para que un
+agente externo describa y parametrice el potencial con las primitivas correctas:
+
+- `request.json` — contexto estructurado para el agente
+- `instructions.md` — instrucciones legibles para Codex/Claude/Antigravity
+- `current_design.json` — Design actual
+- `original.png/jpg/tiff` — imagen de referencia si se adjunta
+- `render.png` — render actual si existe una corrida previa del verifier
+- `result.json` — salida esperada para reimportar en la app
+
+El objetivo principal es producir un `Design` correcto: geometría, piezas,
+parámetros, unidades, supuestos y alternativas de parametrización. El solver
+local queda como verificación secundaria, no como centro del flujo.
+
+El panel permite adjuntar texto e imagen directamente al agente externo, sin
+configurar `ANTHROPIC_API_KEY` o `GEMINI_API_KEY` en la app.
+
+También puedes usarlo como CLI:
+
+```bash
+python -m ai.agent_harness list
+python -m ai.agent_harness design-review <task_id>
+python -m ai.agent_harness local-calc <task_id>
+python -m ai.agent_harness validate-result <task_id>
+```
+
+Para registrar herramientas externas, define comandos por variable de entorno.
+La app solo ejecuta comandos preconfigurados y requiere habilitación explícita:
+
+```bash
+AGENT_TOOL_CODEX='codex exec "{instructions_path}"'
+AGENT_TOOL_CLAUDE='claude -p "@{instructions_path}"'
+AGENT_TOOL_ANTIGRAVITY='antigravity-ide "{task_dir}"'
+AGENT_HARNESS_ENABLE_RUN=1
+```
+
+Placeholders disponibles: `{task_dir}`, `{request_path}`, `{instructions_path}`,
+`{current_design_path}` y `{result_path}`.
+
+Si quieres usarlo con Codex:
+
+1. Copia `.env.example` a `.env`.
+2. Deja configurado `AGENT_TOOL_CODEX`.
+3. Cambia `AGENT_HARNESS_ENABLE_RUN=1`.
+4. En la app, abre el panel del harness, prepara una tarea y ejecuta Codex.
+
+Para replicar este patrón en otro proyecto, conserva el mismo contrato:
+
+- una carpeta de tarea por caso,
+- `request.json` con objetivo, contexto y archivos de entrada,
+- `instructions.md` para el agente,
+- artefactos adjuntos junto a la tarea,
+- `result.json` como única salida estructurada que la app importa y valida.
+
 Para usar el export `.mph` directo a COMSOL (opcional):
 ```bash
 pip install MPh

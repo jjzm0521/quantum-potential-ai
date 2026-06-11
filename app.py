@@ -104,6 +104,12 @@ def _init_state():
         "api_key_set": bool(os.environ.get("ANTHROPIC_API_KEY")),
         "enable_verifier": True,
         "enable_refiner":  True,
+        "agent_task_id": "",
+        "agent_task_goal": "",
+        "agent_source_text": "",
+        "agent_source_image_bytes": None,
+        "agent_source_image_mime": "",
+        "agent_source_image_name": "",
     }
     for k, v in defaults.items():
         st.session_state.setdefault(k, v)
@@ -524,6 +530,239 @@ def _render_pipeline_trace(result):
             st.write(result.designer_output.self_critique)
 
 
+def _latest_verifier_render() -> bytes | None:
+    result = st.session_state.get("pipeline_result")
+    if not result:
+        return None
+    for it in reversed(result.iterations):
+        if it.verifier and it.verifier.render_png:
+            return it.verifier.render_png
+    return None
+
+
+def _remember_agent_text(text: str):
+    st.session_state.agent_source_text = text.strip()
+
+
+def _remember_agent_image(img_bytes: bytes, mime: str, name: str = ""):
+    st.session_state.agent_source_image_bytes = img_bytes
+    st.session_state.agent_source_image_mime = mime
+    st.session_state.agent_source_image_name = name
+
+
+def _agent_image_ext() -> str:
+    mime = st.session_state.get("agent_source_image_mime", "")
+    name = st.session_state.get("agent_source_image_name", "")
+    if name and "." in name:
+        return name.rsplit(".", 1)[-1].lower()
+    if "jpeg" in mime or "jpg" in mime:
+        return "jpg"
+    if "tiff" in mime:
+        return "tiff"
+    return "png"
+
+
+def _agent_task_description() -> str:
+    parts = []
+    if st.session_state.agent_task_goal.strip():
+        parts.append("Objetivo del agente:\n" + st.session_state.agent_task_goal.strip())
+    if st.session_state.agent_source_text.strip():
+        parts.append("Texto/contexto fuente:\n" + st.session_state.agent_source_text.strip())
+    if st.session_state.agent_source_image_name:
+        parts.append(f"Imagen fuente adjunta: {st.session_state.agent_source_image_name}")
+    return "\n\n".join(parts)
+
+
+def _render_agent_harness():
+    from ai.agent_harness import (
+        available_agent_tools,
+        agent_tool_presets,
+        external_execution_enabled,
+        list_agent_tasks,
+        load_agent_result,
+        prepare_agent_task,
+        render_command,
+        run_agent_tool,
+        run_design_review,
+        run_local_calculation,
+        tasks_root,
+    )
+
+    design_key = _editor_kind()
+    design = st.session_state[design_key]
+
+    with st.expander("🧰 Harness de agentes externos y cálculo local", expanded=False):
+        st.caption(
+            "Prepara una tarea para Codex, Claude, Antigravity u otro agente. "
+            "También puede validar y resolver localmente sin gastar API."
+        )
+        st.session_state.agent_task_goal = st.text_area(
+            "Objetivo para el agente",
+            value=st.session_state.agent_task_goal,
+            placeholder=(
+                "Ej: revisa si este Design es físicamente plausible, ajusta piezas "
+                "si hace falta y devuelve result.json."
+            ),
+            height=90,
+            key=f"agent_goal_{design_key}",
+        )
+
+        with st.expander("Contexto que recibirá el agente"):
+            st.session_state.agent_source_text = st.text_area(
+                "Texto o notas de referencia",
+                value=st.session_state.agent_source_text,
+                placeholder="Descripción experimental, escala de la imagen, material, restricciones, parámetros deseados...",
+                height=90,
+                key=f"agent_source_text_{design_key}",
+            )
+            ref_img = st.file_uploader(
+                "Imagen de referencia para el agente",
+                type=["png", "jpg", "jpeg", "tif", "tiff"],
+                key=f"agent_ref_image_{design_key}",
+            )
+            if ref_img is not None:
+                img_bytes = ref_img.getvalue()
+                mime = "image/png" if ref_img.name.lower().endswith("png") else "image/jpeg"
+                if ref_img.name.lower().endswith(("tif", "tiff")):
+                    mime = "image/tiff"
+                _remember_agent_image(img_bytes, mime, ref_img.name)
+            if st.session_state.agent_source_image_bytes:
+                st.caption(f"Imagen lista para adjuntar: `{st.session_state.agent_source_image_name or 'imagen'}`")
+            else:
+                st.caption("Sin imagen adjunta para el agente.")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("Preparar tarea", key=f"prepare_agent_task_{design_key}"):
+                try:
+                    task = prepare_agent_task(
+                        design,
+                        description=_agent_task_description(),
+                        n_states=st.session_state.n_states,
+                        original_image=st.session_state.agent_source_image_bytes,
+                        original_image_ext=_agent_image_ext(),
+                        render_png=_latest_verifier_render(),
+                    )
+                    st.session_state.agent_task_id = task.task_id
+                    st.success(f"Tarea creada: {task.task_id}")
+                except Exception as e:
+                    st.error(f"No se pudo crear la tarea: {e}")
+        with c2:
+            st.caption(f"Carpeta base: `{tasks_root()}`")
+
+        tasks = list_agent_tasks()
+        if not tasks:
+            st.info("Todavía no hay tareas de agente.")
+            return
+
+        task_ids = [t["task_id"] for t in tasks]
+        current = st.session_state.agent_task_id if st.session_state.agent_task_id in task_ids else task_ids[0]
+        selected = st.selectbox(
+            "Tarea activa",
+            task_ids,
+            index=task_ids.index(current),
+            format_func=lambda tid: f"{tid} {'✓ result.json' if next(t for t in tasks if t['task_id'] == tid)['has_result'] else ''}",
+            key=f"agent_task_select_{design_key}",
+        )
+        st.session_state.agent_task_id = selected
+        selected_meta = next(t for t in tasks if t["task_id"] == selected)
+        st.code(selected_meta["dir"], language="text")
+
+        h1, h2, h3 = st.columns(3)
+        with h1:
+            if st.button("Revisar parametrización", key=f"agent_design_review_{design_key}"):
+                with st.spinner("Revisando descripción paramétrica..."):
+                    try:
+                        result = run_design_review(selected)
+                        st.success("Revisión de parametrización terminada.")
+                        st.json(result.get("diagnostics", {}).get("design_contract", {}))
+                    except Exception as e:
+                        st.error(f"Revisión falló: {e}")
+            if st.button("Correr cálculo local", key=f"agent_local_calc_{design_key}"):
+                with st.spinner("Validando y resolviendo localmente..."):
+                    try:
+                        result = run_local_calculation(selected)
+                        st.success("Cálculo local terminado.")
+                        st.json(result.get("diagnostics", {}))
+                    except Exception as e:
+                        st.error(f"Cálculo local falló: {e}")
+
+        tools = available_agent_tools()
+        with h2:
+            if tools:
+                tool_names = [t.name for t in tools]
+                tool_name = st.selectbox("Herramienta externa", tool_names,
+                                         key=f"agent_tool_{design_key}")
+                tool = next(t for t in tools if t.name == tool_name)
+                st.caption(f"Config: `{tool.env_name}`")
+            else:
+                tool_name = ""
+                tool = None
+                st.caption("Configura `AGENT_TOOL_CODEX`, `AGENT_TOOL_CLAUDE` o `AGENT_TOOL_ANTIGRAVITY`.")
+                with st.expander("Presets para copiar en .env"):
+                    for preset in agent_tool_presets():
+                        if preset["detected_on_path"]:
+                            detected = f"comando detectado: {preset['detected_path']}"
+                        elif preset["local_config_found"]:
+                            detected = "instalación/configuración encontrada, falta comando en PATH"
+                        else:
+                            detected = "no detectado"
+                        st.caption(f"{preset['name']} ({detected})")
+                        st.code(
+                            f"{preset['env_name']}={preset['command_template']}",
+                            language="bash",
+                        )
+                    st.code("AGENT_HARNESS_ENABLE_RUN=1", language="bash")
+
+        with h3:
+            if tool:
+                if external_execution_enabled():
+                    if st.button("Ejecutar herramienta", key=f"agent_run_tool_{design_key}"):
+                        with st.spinner(f"Ejecutando {tool.name}..."):
+                            try:
+                                run = run_agent_tool(tool.name, selected)
+                                if run.ok:
+                                    st.success("Herramienta terminada sin error.")
+                                else:
+                                    st.error(f"La herramienta terminó con código {run.returncode}.")
+                                if run.stdout:
+                                    st.text_area("Salida", run.stdout[-4000:], height=120)
+                                if run.stderr:
+                                    st.text_area("Errores", run.stderr[-4000:], height=120)
+                            except Exception as e:
+                                st.error(f"No se pudo ejecutar la herramienta: {e}")
+                else:
+                    st.caption("Ejecución desactivada. Usa `AGENT_HARNESS_ENABLE_RUN=1` para permitirla.")
+
+        if tool:
+            with st.expander("Comando preparado"):
+                try:
+                    st.code(render_command(tool, selected), language="bash")
+                except Exception as e:
+                    st.error(f"No se pudo preparar el comando: {e}")
+
+        if selected_meta["has_result"]:
+            st.markdown("**Resultado disponible**")
+            try:
+                result, issues = load_agent_result(selected)
+                st.json({
+                    "status": result.get("status"),
+                    "confidence": result.get("confidence"),
+                    "changes_summary": result.get("changes_summary"),
+                    "validator_issues": issues,
+                })
+                if st.button("Aplicar result.json al Design actual",
+                             key=f"agent_apply_result_{design_key}"):
+                    if not isinstance(result.get("design"), dict):
+                        st.error("El result.json no contiene un Design válido.")
+                    else:
+                        st.session_state[design_key] = result["design"]
+                        st.success("Design actualizado desde result.json.")
+                        st.rerun()
+            except Exception as e:
+                st.error(f"No se pudo leer result.json: {e}")
+
+
 # ---------------------------------------------------------------------------
 # Sidebar
 # ---------------------------------------------------------------------------
@@ -719,6 +958,7 @@ elif MODE == "1D Designer (IA)":
                 if not text_desc.strip():
                     st.warning("Escribe una descripción.")
                 else:
+                    _remember_agent_text(text_desc)
                     _run_pipeline_text(text_desc)
 
         with tab_img:
@@ -736,6 +976,8 @@ elif MODE == "1D Designer (IA)":
                 else:
                     img_bytes = uploaded.read()
                     mime = "image/png" if uploaded.name.lower().endswith("png") else "image/jpeg"
+                    _remember_agent_image(img_bytes, mime, uploaded.name)
+                    _remember_agent_text(extra_ctx)
                     _run_pipeline_image(img_bytes, mime, extra_ctx)
 
         if not st.session_state.api_key_set:
@@ -765,6 +1007,7 @@ elif MODE == "1D Designer (IA)":
 
         st.button("▶ Correr solver Schrödinger 1D", type="primary",
                    key="btn_solve_designer_1d", on_click=_run_solver_designer)
+        _render_agent_harness()
 
     with col_right:
         x_nm = np.linspace(-L/2, L/2, N)
@@ -933,6 +1176,7 @@ else:
                 if not text_desc.strip():
                     st.warning("Escribe una descripción.")
                 else:
+                    _remember_agent_text(text_desc)
                     _run_pipeline_text(text_desc)
 
         with tab_img:
@@ -947,6 +1191,10 @@ else:
                 else:
                     img_bytes = uploaded.read()
                     mime = "image/png" if uploaded.name.lower().endswith("png") else "image/jpeg"
+                    if uploaded.name.lower().endswith(("tif", "tiff")):
+                        mime = "image/tiff"
+                    _remember_agent_image(img_bytes, mime, uploaded.name)
+                    _remember_agent_text(extra_ctx)
                     _run_pipeline_image(img_bytes, mime, extra_ctx)
 
         if not st.session_state.api_key_set:
@@ -978,6 +1226,7 @@ else:
 
         st.button("▶ Correr solver Schrödinger 2D", type="primary", key="btn_solve_designer",
                    on_click=_run_solver_designer)
+        _render_agent_harness()
 
     with col_right:
         # Visualización: render del Design en vivo + render IA + resultados
