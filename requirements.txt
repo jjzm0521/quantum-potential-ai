@@ -1,0 +1,11 @@
+anthropic>=0.40.0
+numpy>=1.26.0
+scipy>=1.12.0
+matplotlib>=3.8.0
+plotly>=5.20.0
+streamlit>=1.35.0
+Pillow>=10.0.0
+python-dotenv>=1.0.0
+# Opcional: solo si quieres generar .mph directo desde Python.
+# Requiere COMSOL instalado en la máquina + Java (lo trae COMSOL).
+# MPh>=1.2.0

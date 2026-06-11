@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.pytest_cache/
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+ENV/
+
+# Configuración local / secretos
+.env
+.env.local
+*.key
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Runs del pipeline IA (event logs locales)
+runs/
+
+# Outputs generados
+*.mph
+*.npz
+*.csv
+outputs/
+exports/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Logs
+*.log
