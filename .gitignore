@@ -24,6 +24,9 @@ ENV/
 # Runs del pipeline IA (event logs locales)
 runs/
 
+# Sesión de trabajo del CLI qpot (Design + renders + resultados)
+session/
+
 # Outputs generados
 *.mph
 *.npz
@@ -34,6 +37,8 @@ exports/
 # IDE
 .vscode/
 .idea/
+.claude/
+.codex/
 *.swp
 *.swo
 

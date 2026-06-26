@@ -34,6 +34,8 @@ Cada pieza es aditiva por defecto (se suman).
 """
 
 from __future__ import annotations
+import copy
+import re
 import numpy as np
 from .primitives import (
     ALL_PRIMITIVES, REGION_PRIMITIVES, PROFILE_PRIMITIVES,
@@ -42,6 +44,52 @@ from .primitives import (
 from .primitives_dsl_1d import (
     REGION_PRIMITIVES_1D, PROFILE_PRIMITIVES_1D,
 )
+
+
+# ---------------------------------------------------------------------------
+# Parámetros nombrados: "definir geometría a partir de parámetros"
+# ---------------------------------------------------------------------------
+
+# Claves cuyo valor es estructural (no una referencia a parámetro) y no se sustituyen.
+_PARAM_RESERVED_KEYS = {"op", "label", "axis", "side", "material", "kind", "enabled"}
+
+
+def resolve_params(design: dict) -> dict:
+    """Devuelve una copia del Design con las referencias a `parameters` sustituidas
+    por sus valores numéricos.
+
+    El Design puede traer un bloque raíz `"parameters": {"R1":12,"R2":28,"n":7,"Vb":0.228}`
+    y las args/value de las piezas pueden ser un número o el NOMBRE de un parámetro
+    (string que coincide con una clave de `parameters`), p. ej. `"R":"R2"`, `"value":"Vb"`.
+    Para evaluar/resolver se sustituyen; para exportar a COMSOL se conservan los nombres.
+    """
+    params = design.get("parameters") or {}
+    if not params:
+        return design
+
+    def expr_with_params(expr: str) -> str:
+        out = expr
+        for name, value in params.items():
+            if isinstance(value, (int, float)):
+                out = re.sub(rf"\b{re.escape(name)}\b", repr(value), out)
+        return out
+
+    def sub(val):
+        if isinstance(val, str):
+            return params.get(val, val)
+        if isinstance(val, list):
+            return [sub(v) for v in val]
+        if isinstance(val, dict):
+            if val.get("op") == "raw_expr" and isinstance(val.get("args", {}).get("expr"), str):
+                copied = copy.deepcopy(val)
+                copied["args"]["expr"] = expr_with_params(copied["args"]["expr"])
+                return copied
+            return {k: (v if k in _PARAM_RESERVED_KEYS else sub(v)) for k, v in val.items()}
+        return val
+
+    d = copy.deepcopy(design)
+    d["pieces"] = sub(d.get("pieces", []))
+    return d
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +196,17 @@ def _evaluate_region(region_piece: dict, X: np.ndarray, Y: np.ndarray) -> np.nda
 # Conversión Design → expresión MATLAB (para exportar a COMSOL)
 # ---------------------------------------------------------------------------
 
+def _param_unit_for_expr(name: str) -> str:
+    n = name.lower()
+    if n in {"n", "k", "cycles", "ciclos", "nfoot", "nshape", "nexp"}:
+        return ""
+    if n in {"theta", "phi"} or "angle" in n or n.endswith("deg"):
+        return "deg"
+    if n.startswith("v") or any(t in n for t in ("depth", "amp", "height", "value", "pot", "barrier")):
+        return "eV"
+    return "nm"
+
+
 def design_to_matlab_expr(design: dict) -> str:
     """
     Convierte un Design a una expresión MATLAB/COMSOL en coordenadas (x,y)
@@ -157,14 +216,15 @@ def design_to_matlab_expr(design: dict) -> str:
       "-0.3*exp(-((x-0)^2+(y-0)^2)/(2*(20e-9)^2)) + 0.5*((sqrt((x-15e-9)^2+y^2) < 5e-9))"
     """
     terms = []
+    params = design.get("parameters") or {}
     for piece in design.get("pieces", []):
         if piece.get("enabled", True) is False:
             continue
-        terms.append(_piece_to_matlab(piece))
+        terms.append(_piece_to_matlab(piece, params))
     return " + ".join(terms) if terms else "0"
 
 
-def _piece_to_matlab(piece: dict) -> str:
+def _piece_to_matlab(piece: dict, params: dict | None = None) -> str:
     op = piece.get("op")
 
     # Helpers
@@ -212,8 +272,23 @@ def _piece_to_matlab(piece: dict) -> str:
                 f"sqrt((x-({c[0]}e-9))^2+(y-({c[1]}e-9))^2+({reg}e-9)^2))")
 
     if op == "raw_expr":
-        # MATLAB syntax sustituyendo ** por ^
-        return "(" + piece["args"]["expr"].replace("**", "^") + ")"
+        # raw_expr se evalúa internamente con x,y en nm; COMSOL recibe x,y en m.
+        params = params or {}
+        expr = piece["args"]["expr"].replace("**", "^")
+        expr = re.sub(r"\bx\b", "(x/(1[nm]))", expr)
+        expr = re.sub(r"\by\b", "(y/(1[nm]))", expr)
+        expr = re.sub(r"\br\b", "(sqrt(x^2+y^2)/(1[nm]))", expr)
+        expr = re.sub(r"\btheta\b", "atan2(y,x)", expr)
+        for name in sorted(params, key=len, reverse=True):
+            unit = _param_unit_for_expr(name)
+            if unit == "nm":
+                repl = f"({name}/(1[nm]))"
+            elif unit == "deg":
+                repl = f"({name}/(1[deg]))"
+            else:
+                repl = name
+            expr = re.sub(rf"\b{re.escape(name)}\b", repl, expr)
+        return "(" + expr + ")"
 
     if op == "mask":
         reg = _region_to_matlab(piece["region"])
@@ -333,6 +408,16 @@ def preset_to_design(pot_name: str, params: dict, dim: int = 2) -> dict:
 
 
 def _preset_2d(name: str, p: dict) -> dict:
+    from .potentials import POTENTIALS
+
+    if name not in POTENTIALS:
+        raise ValueError(f"Preset 2D desconocido: '{name}'. Disponibles: {', '.join(POTENTIALS)}")
+
+    provided = dict(p)
+    p = {**POTENTIALS[name].params, **provided}
+    if name == "quantum_dot" and "radius" in provided and "sigma" not in provided:
+        p["sigma"] = p["radius"]
+
     pieces = []
     if name == "quantum_dot":
         pieces = [{
@@ -377,13 +462,18 @@ def _preset_2d(name: str, p: dict) -> dict:
                         "amplitude":-p["depth"],"sigma":p["sigma"]},
                 "label":f"punto {i+1}",
             })
-    else:
-        pieces = []
     return {"dim": 2, "pieces": pieces}
 
 
 def _preset_1d(name: str, p: dict) -> dict:
     """Convierte preset del catálogo legacy 1D a Design DSL 1D."""
+    from .potentials_1d import POTENTIALS_1D
+
+    if name not in POTENTIALS_1D:
+        raise ValueError(f"Preset 1D desconocido: '{name}'. Disponibles: {', '.join(POTENTIALS_1D)}")
+
+    p = {**POTENTIALS_1D[name].params, **p}
+
     if name == "finite_well":
         return {"dim": 1, "pieces": [
             {"op": "mask",
@@ -439,8 +529,7 @@ def _preset_1d(name: str, p: dict) -> dict:
             {"op":"step","args":{"position":p.get("offset",0),"height":p["height"]},
              "label":"escalón"},
         ]}
-    # default
-    return {"dim": 1, "pieces": [{"op": name, "args": p}]}
+    raise ValueError(f"Preset 1D no implementado: '{name}'")
 
 
 # ===========================================================================

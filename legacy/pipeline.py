@@ -13,8 +13,8 @@ from typing import Optional
 from .designer_agent import design_from_text, design_from_image, DesignerOutput
 from .verifier_agent import verify, VerifierOutput
 from .refiner_agent import refine, RefinerOutput
-from .validators import validate_design
-from .event_log import EventLog
+from ai.validators import validate_design
+from ai.event_log import EventLog
 
 
 # Umbrales

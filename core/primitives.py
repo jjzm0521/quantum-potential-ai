@@ -90,10 +90,11 @@ def region_rose(X, Y, center=(0.0, 0.0), k=4, R=20.0, angle_deg=0.0):
     return r <= R * np.abs(np.cos(k * theta))
 
 
-def region_polygon(X, Y, vertices):
-    """
-    Polígono arbitrario. vertices: lista de (x, y) en nm.
-    Usa ray casting.
+def _point_in_polygon(X, Y, vertices):
+    """Relleno por ray casting (regla par-impar). vertices: array (N,2) en nm.
+
+    Reutilizado por `region_polygon` y por las curvas paramétricas cerradas
+    (epicicloide/hipocicloide), que se muestrean a polígono.
     """
     pts = np.asarray(vertices, dtype=float)
     n = len(pts)
@@ -107,6 +108,49 @@ def region_polygon(X, Y, vertices):
         inside ^= cond
         j = i
     return inside
+
+
+def region_polygon(X, Y, vertices):
+    """Polígono arbitrario. vertices: lista de (x, y) en nm. Usa ray casting."""
+    return _point_in_polygon(X, Y, vertices)
+
+
+def _cycloid_vertices(R, n, kind, center=(0.0, 0.0), angle_deg=0.0, samples=600):
+    """Muestrea la frontera cerrada de una epicicloide/hipocicloide → array (samples,2) en nm.
+
+    r = R/n;  t ∈ [0, 2π).  n = nº de ciclos/cúspides (entero ≥ 3).
+      hipocicloide: x=(R−r)cos t + r cos((n−1)t),  y=(R−r)sin t − r sin((n−1)t)
+      epicicloide:  x=(R+r)cos t − r cos((n+1)t),  y=(R+r)sin t − r sin((n+1)t)
+    """
+    n_int = max(3, int(round(n)))
+    r = R / n_int
+    t = np.linspace(0.0, 2.0 * np.pi, int(samples), endpoint=False)
+    if kind == "hypocycloid":
+        x = (R - r) * np.cos(t) + r * np.cos((n_int - 1) * t)
+        y = (R - r) * np.sin(t) - r * np.sin((n_int - 1) * t)
+    elif kind == "epicycloid":
+        x = (R + r) * np.cos(t) - r * np.cos((n_int + 1) * t)
+        y = (R + r) * np.sin(t) - r * np.sin((n_int + 1) * t)
+    else:
+        raise ValueError(f"curva paramétrica desconocida: {kind}")
+    if angle_deg:
+        a = np.deg2rad(angle_deg)
+        c, s = np.cos(a), np.sin(a)
+        x, y = c * x - s * y, s * x + c * y
+    cx, cy = center
+    return np.column_stack([x + cx, y + cy])
+
+
+def region_hypocycloid(X, Y, center=(0.0, 0.0), R=20.0, n=5, angle_deg=0.0):
+    """Interior de una hipocicloide de radio R y n cúspides (estrella de n puntas)."""
+    verts = _cycloid_vertices(R, n, "hypocycloid", center, angle_deg)
+    return _point_in_polygon(X, Y, verts)
+
+
+def region_epicycloid(X, Y, center=(0.0, 0.0), R=20.0, n=5, angle_deg=0.0):
+    """Interior de una epicicloide de radio R y n cúspides (flor de n lóbulos)."""
+    verts = _cycloid_vertices(R, n, "epicycloid", center, angle_deg)
+    return _point_in_polygon(X, Y, verts)
 
 
 def region_half_plane(X, Y, axis="x", position=0.0, side="positive"):
@@ -333,6 +377,24 @@ REGION_PRIMITIVES: dict[str, PrimitiveSpec] = {
         arg_units={"center":"nm","k":"","R":"nm","angle_deg":"°"},
         arg_help={"k":"número de pétalos (par→2k, impar→k)","R":"radio máximo"},
         description="Roseta r<=R·|cos(kθ)|. Para puntos cuánticos con pétalos.",
+    ),
+    "hypocycloid": PrimitiveSpec(
+        name="hypocycloid", kind="region", fn=region_hypocycloid,
+        args={"center":[0.0,0.0],"R":20.0,"n":5,"angle_deg":0.0},
+        arg_units={"center":"nm","R":"nm","n":"","angle_deg":"°"},
+        arg_help={"R":"radio característico","n":"nº de ciclos/cúspides (entero ≥3)",
+                   "angle_deg":"rotación"},
+        description="Interior de una hipocicloide (estrella de n puntas hacia adentro). "
+                    "Frontera interna tipo COMSOL definida por R y n.",
+    ),
+    "epicycloid": PrimitiveSpec(
+        name="epicycloid", kind="region", fn=region_epicycloid,
+        args={"center":[0.0,0.0],"R":20.0,"n":5,"angle_deg":0.0},
+        arg_units={"center":"nm","R":"nm","n":"","angle_deg":"°"},
+        arg_help={"R":"radio característico","n":"nº de ciclos/lóbulos (entero ≥3)",
+                   "angle_deg":"rotación"},
+        description="Interior de una epicicloide (flor de n lóbulos hacia afuera). "
+                    "Frontera externa tipo COMSOL definida por R y n.",
     ),
     "polygon": PrimitiveSpec(
         name="polygon", kind="region", fn=region_polygon,

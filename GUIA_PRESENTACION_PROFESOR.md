@@ -3,6 +3,13 @@
 > **Fecha:** Junio 2026  
 > **Propósito:** Estructura completa de explicación para la reunión de avance con el profesor.
 
+> ⚠ **Actualización (junio 2026): el flujo cambió.** Ya **no se usa ninguna API de pago**. El
+> pipeline multi-agente ahora lo ejecuta el LLM que el estudiante ya tiene (Claude Code / ChatGPT
+> / Codex / Antigravity) manejando el repo con el CLI `qpot` (estilo Text2CAD). Ver
+> **[README.md](README.md)** y **[AGENTS.md](AGENTS.md)**. Lo que este documento llama "pipeline
+> de IA con API" quedó archivado en `legacy/`; la física, el solver y la exportación a COMSOL no
+> cambiaron.
+
 Este documento organiza toda la estructura de la aplicación, el motor científico, el pipeline de Inteligencia Artificial y la integración con COMSOL para que puedas explicárselo a tu profesor de manera clara, rigurosa y ordenada.
 
 ---

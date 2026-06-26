@@ -5,5 +5,11 @@ secondaryBackgroundColor = "#1A1F2E"
 textColor = "#FAFAFA"
 
 [server]
-headless = false
+headless = true
 port = 8501
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"

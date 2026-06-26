@@ -1,11 +1,20 @@
-anthropic>=0.40.0
+# --- Núcleo (requerido para el CLI `qpot`) ---
 numpy>=1.26.0
 scipy>=1.12.0
-matplotlib>=3.8.0
-plotly>=5.20.0
-streamlit>=1.35.0
-Pillow>=10.0.0
-python-dotenv>=1.0.0
-# Opcional: solo si quieres generar .mph directo desde Python.
-# Requiere COMSOL instalado en la máquina + Java (lo trae COMSOL).
-# MPh>=1.2.0
+matplotlib>=3.8.0     # render PNG (lo que el agente "mira")
+plotly>=5.20.0        # `qpot render --html`: visualización 3D interactiva (sin servidor)
+streamlit>=1.35.0     # visualizador local: parametros, solver, exportacion (sin API)
+
+# --- Export .mph nativo a COMSOL (opcional) ---
+# `qpot export --format mph` construye el .mph por geometria + interfaz Schrodinger.
+# Requiere COMSOL instalado. La version de MPh/jpype depende del Java que trae COMSOL:
+#   - COMSOL 5.6 (trae Java 8):   MPh==1.2.3  +  jpype1==1.5.2   (probado OK)
+#   - COMSOL 6.x  (Java 11+):     MPh>=1.3    +  jpype1>=1.7
+# Sin MPh, `--format mph` cae con gracia a la receta (2D) o al script .m (1D).
+# MPh==1.2.3
+# jpype1==1.5.2
+
+# --- Solo para el código archivado en legacy/ (pipeline con API). NO requerido. ---
+# Pillow>=10.0.0
+# anthropic>=0.40.0
+# python-dotenv>=1.0.0

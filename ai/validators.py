@@ -54,8 +54,6 @@ def validate_numerical_1d(design: dict, x: np.ndarray) -> list[str]:
             issues.append(f"Rango de V (excluyendo paredes) = {V_range:.2f} eV >50 eV.")
         if V_range < 1e-6:
             issues.append("V casi constante — sin estructura.")
-    if V_finite.min() >= 0 and V_finite.max() > 0.1:
-        issues.append("AVISO: el potencial no tiene mínimo negativo. Estados ligados poco probables.")
     return issues
 
 
@@ -227,10 +225,5 @@ def validate_numerical(design: dict, X: np.ndarray, Y: np.ndarray) -> list[str]:
                       f"Probable bug en algún coeficiente.")
     if V_range < 1e-6:
         issues.append("V es prácticamente constante — sin estructura para resolver.")
-
-    # ¿Hay algún pozo? Es decir, ¿hay valores negativos significativos?
-    # (No es error, solo aviso)
-    if V.min() >= 0 and V.max() > 0.1:
-        issues.append("AVISO: el potencial no tiene mínimo negativo. Los estados ligados pueden no existir.")
 
     return issues

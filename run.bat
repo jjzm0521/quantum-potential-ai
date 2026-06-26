@@ -7,8 +7,12 @@ setlocal EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo ===============================================
-echo   Quantum Potential AI - launcher
+echo   Quantum Potential AI - visor (sin API)
 echo ===============================================
+echo.
+echo   Nota: el flujo principal es el CLI "python -m qpot" manejado por tu
+echo   agente (Claude Code / ChatGPT / Codex). Ver AGENTS.md.
+echo   Esto solo abre el visor humano (mover parametros, resolver, exportar).
 echo.
 
 REM ----------------------------------------------------------------
@@ -97,32 +101,22 @@ if not "%REQ_HASH_CUR%"=="%REQ_HASH_OLD%" (
 )
 
 REM ----------------------------------------------------------------
-REM 5) Verificar que streamlit existe en el venv
+REM 5) Entorno listo - abrir visualizador local
 REM ----------------------------------------------------------------
-python -c "import streamlit" >nul 2>nul
+echo.
+echo [ok] Entorno listo (sin API paga).
+echo.
+echo  Abriendo visualizador local en Streamlit:
+echo.
+echo     http://localhost:8501
+echo.
+echo  El agente puede seguir usando el CLI qpot sobre la misma sesion.
+echo.
+python -m streamlit run app.py
 if errorlevel 1 (
-    echo [ERROR] Streamlit no quedo instalado en el venv.
-    echo Borra la carpeta .venv y volve a correr run.bat.
+    echo.
+    echo [ERROR] No se pudo abrir el visualizador.
     pause
     exit /b 1
 )
-
-REM ----------------------------------------------------------------
-REM 6) Arrancar Streamlit
-REM ----------------------------------------------------------------
-echo.
-echo [run] Arrancando Streamlit en http://localhost:8501 ...
-echo       Si no abre el navegador solo, pega esa URL a mano.
-echo       Para detener: Ctrl+C en esta ventana.
-echo.
-python -m streamlit run app.py
-set "ST_EXIT=%errorlevel%"
-
-if not "%ST_EXIT%"=="0" (
-    echo.
-    echo [ERROR] Streamlit termino con codigo %ST_EXIT%.
-    echo Revisa el mensaje arriba.
-    pause
-)
-
 endlocal

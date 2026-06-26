@@ -6,8 +6,12 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 echo "==============================================="
-echo "  Quantum Potential AI - launcher"
+echo "  Quantum Potential AI - visor (sin API)"
 echo "==============================================="
+echo
+echo "  Nota: el flujo principal es el CLI 'python -m qpot' manejado por tu"
+echo "  agente (Claude Code / ChatGPT / Codex). Ver AGENTS.md."
+echo "  Esto solo abre el visor humano (mover parametros, resolver, exportar)."
 echo
 
 # 1) Verificar Python
@@ -65,25 +69,14 @@ else
   echo "[info] Deps ya instaladas (requirements.txt sin cambios)."
 fi
 
-# 5) Verificar streamlit
-if ! python -c "import streamlit" >/dev/null 2>&1; then
-  echo "[ERROR] Streamlit no quedo instalado en el venv." >&2
-  echo "Borra .venv y volve a correr ./run.sh" >&2
-  exit 1
-fi
-
-# 6) Cargar .env si existe
-if [ -f ".env" ]; then
-  set -a
-  # shellcheck disable=SC1091
-  source .env
-  set +a
-fi
-
-# 7) Arrancar Streamlit
+# 5) Entorno listo - abrir visualizador local
 echo
-echo "[run] Arrancando Streamlit en http://localhost:8501 ..."
-echo "      Si no abre el navegador solo, pega esa URL a mano."
-echo "      Para detener: Ctrl+C en esta ventana."
+echo "[ok] Entorno listo (sin API paga)."
 echo
-exec python -m streamlit run app.py
+echo "  Abriendo visualizador local en Streamlit:"
+echo
+echo "     http://localhost:8501"
+echo
+echo "  El agente puede seguir usando el CLI qpot sobre la misma sesion."
+echo
+python -m streamlit run app.py

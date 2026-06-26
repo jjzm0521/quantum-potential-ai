@@ -33,21 +33,33 @@ Para validar los cálculos de Python, la herramienta exporta el modelo directame
 2. **Script de MATLAB LiveLink (`.m`):** Un script de texto autogenerado que recrea el modelo al ejecutarse dentro de la consola LiveLink de COMSOL.
 3. **El Recetario de Parámetros (Paso a Paso):** Un panel en la UI que desglosa la **traducción matemática** del diseño: le muestra al profesor exactamente qué parámetros globales crear en COMSOL, qué geometría dibujar y qué expresión analítica usar para $V_{pot}$ (con los límites de visualización `plotargs` ajustados a los nanómetros del pozo).
 
-### 5. Robustez de la IA: El Flujo Multi-Agente
-Cuando el profesor ingresa una descripción o una imagen AFM:
-* **Designer Agent:** Propone el primer borrador de piezas JSON.
-* **Verifier Agent (Multimodal):** Toma la imagen original, la compara visualmente con el render del potencial generado y califica de 0 a 10. Si el score es menor a 7, enumera las discrepancias específicas (`mismatches`) y sugiere correcciones.
-* **Refiner Agent:** Toma las correcciones y redefine el diseño en un ciclo cerrado de hasta 3 iteraciones para asegurar que el potencial físico coincida con la AFM real.
+### 5. El Flujo Multi-Agente (sin API de pago)
+El "cerebro" es el LLM que el estudiante **ya tiene abierto** (Claude Code, ChatGPT, Codex,
+Antigravity) trabajando sobre el repo. No se paga ninguna API. El mismo loop Designer →
+Verifier → Refiner lo ejecuta ese agente usando el CLI `qpot`:
+* **Designer:** a partir del texto/imagen, construye el `Design` JSON con `qpot add/set/from-preset`.
+* **Verifier:** `qpot verify` renderiza el potencial a PNG (el agente lo **mira**), valida
+  esquema/física y resuelve Schrödinger; si hay imagen fuente, el agente la compara con el render.
+* **Refiner:** el agente ajusta las piezas y repite `verify` hasta que coincida con el objetivo.
+
+Ver **[AGENTS.md](AGENTS.md)** para el manual del agente y **[PRIMITIVES.md](PRIMITIVES.md)**
+para el esquema y las primitivas.
 
 ---
 
 ## ¿Qué hace?
 
-Tres modos de uso:
+Dos formas de uso, sobre la **misma sesión** (`session/design.json`):
 
-1. **1D Catálogo** — Pozos, barreras, oscilador armónico, doble pozo, Pöschl-Teller, Morse... con validación analítica.
-2. **2D Catálogo** — Quantum dots, anillos, doble dot, triple dot, etc., con sliders y export.
-3. **2D Designer (IA)** — Lo nuevo: **describe en lenguaje natural o sube una imagen AFM/SEM** y la IA compone el potencial como suma de primitivas paramétricas (gaussianas, super-elipses, rosetas, Coulomb...), con un loop de verificación visual que itera hasta que el render coincide con la imagen original.
+1. **CLI `qpot` (lo maneja tu agente)** — Tu LLM (Claude Code / ChatGPT / Codex / Antigravity)
+   construye el potencial desde texto o imagen, lo **renderiza para verlo**, lo verifica en un
+   loop y lo exporta. Es el flujo principal, **sin API de pago**. Ver [AGENTS.md](AGENTS.md).
+2. **Vista para el humano (sin servidor)** — `qpot render` da un PNG limpio y
+   `qpot render --html` una **superficie 3D interactiva** (`session/potential.html`) que abres
+   con doble clic. Sin API, sin Streamlit.
+
+Hay un catálogo de presets clásicos (pozos, barreras, oscilador, doble pozo, anillos, dots…)
+que el agente carga con `qpot from-preset`.
 
 Todo se resuelve numéricamente con un solver Schrödinger 2D/1D (diferencias finitas) y se exporta a:
 - **CSV** de eigenvalores
@@ -79,52 +91,59 @@ Todo se resuelve numéricamente con un solver Schrödinger 2D/1D (diferencias fi
 
 El **Design** es un dict JSON con una lista de "pieces". Cada pieza es una primitiva (gaussian, mexican_hat, coulomb, ...) o una operación compuesta (mask, where, clamp). Todas se suman para formar V(x,y).
 
-### Pipeline de IA (modo Designer)
+### Loop del agente (Designer → Verify → Refiner)
 
 ```
-Input (imagen + texto)
+Input (texto + imagen)  →  el agente lo lee
     │
     ▼
-[Designer Agent]  ← system prompt + few-shot + chain of thought + self-critique
+[Designer]  qpot new / from-preset / add / set     → escribe session/design.json
     │
     ▼
-Design JSON v1
+[Verify]    qpot verify  → render.png (el agente lo MIRA) + validación + solver
+    │
+    ▼  (si no coincide o hay issues)
+[Refiner]   qpot set / add / remove  → repite verify
+    │
+    └──→ loop hasta que el render coincida y objective_ok = true
     │
     ▼
-[Validador numérico]  ← sanity checks sin IA (rangos físicos, NaN, etc.)
-    │
-    ▼
-[Verifier Agent]  ← multimodal: compara render con imagen original
-    │
-    ▼  (si score < 7)
-[Refiner Agent]  ← itera el Design corrigiendo mismatches
-    │
-    └──→ loop hasta score ≥ 7 o max 3 iters
-    │
-    ▼
-Design final + score + trazabilidad completa
+qpot export  → COMSOL (.m/.mph/receta) / CSV / NumPy
 ```
+
+El detalle del loop está en [AGENTS.md](AGENTS.md). En Claude Code, el comando `/potential`
+lo arranca de una.
 
 ---
 
 ## Inicio rápido
 
-**Windows** — doble click en `run.bat` (o desde cmd):
-```cmd
-run.bat
-```
+**No se necesita ninguna API key.** El cerebro es tu propio agente.
 
-**Linux / macOS / Git Bash**:
+1. Instala dependencias (una vez):
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. Abre tu agente (Claude Code / ChatGPT / Codex / Antigravity) **dentro de esta carpeta** y
+   pídele algo como *"abre el potencial: pozo finito de GaAs de 30 nm y 250 meV"*. Él usará el
+   CLI `qpot` (ver [AGENTS.md](AGENTS.md)). O hazlo tú a mano:
+   ```bash
+   python -m qpot new --dim 1 --material GaAs
+   python -m qpot from-preset finite_well --dim 1 --params "{\"depth\":0.25,\"L\":30}"
+   python -m qpot verify     # genera session/render.png — ábrelo y míralo
+   python -m qpot export --format m
+   ```
+
+### Ver el potencial (sin servidor)
+
 ```bash
-./run.sh
+python -m qpot render --html --open   # superficie 3D interactiva en el navegador
 ```
 
-Ambos scripts crean el venv, instalan dependencias en la primera corrida y abren
-la app en http://localhost:8501. Para la IA, poné tu API key de Anthropic en `.env`:
-
-```
-ANTHROPIC_API_KEY=sk-ant-xxxx
-```
+`render.png` (PNG limpio: en 2D, superficie 3D + vista superior) y `potential.html` (3D
+rotable) quedan en `session/`. Para preparar el entorno de una: **Windows** → doble click en
+`run.bat`; **Linux / macOS / Git Bash** → `./run.sh` (crean el venv, instalan deps y muestran
+los comandos). El visor Streamlit antiguo quedó en `legacy/app.py`.
 
 ## Instalación manual
 
@@ -133,73 +152,27 @@ cd Proyecto_cuantica
 pip install -r requirements.txt
 ```
 
-Para usar las funciones de IA, configurar la API key de Anthropic:
+No hace falta configurar ninguna API key para el flujo principal.
+
+### El CLI `qpot` (la herramienta que maneja el agente)
+
+Todos los comandos operan sobre `session/design.json`. Referencia completa en
+[AGENTS.md](AGENTS.md); resumen:
 
 ```bash
-# Opción 1: archivo .env
-echo "ANTHROPIC_API_KEY=sk-ant-xxxx" > .env
-
-# Opción 2: variable de entorno
-
-# Opción 3: ingresarla en el sidebar de la app
+python -m qpot new --dim {1,2} --material GaAs   # crear sesión
+python -m qpot from-preset <name> --dim 1 --params "{...}"  # cargar preset
+python -m qpot add gaussian --args "{\"center\":-15,\"amplitude\":-0.2,\"sigma\":5}"
+python -m qpot set <idx> <param> <valor>         # mover un parámetro
+python -m qpot render                            # → session/render.png (míralo)
+python -m qpot solve --n-states 4                # eigenvalores + funciones de onda
+python -m qpot verify                            # loop: render + validar + resolver
+python -m qpot set-image foto.png                # registrar imagen fuente
+python -m qpot export --format {csv,npz,m,mph,recipe}
 ```
 
-### Harness de agentes externos y parametrización
-
-Los modos Designer incluyen un panel **Harness de agentes externos y cálculo local**.
-Sirve para crear una tarea portable en `runs/agent_tasks/<task_id>/` para que un
-agente externo describa y parametrice el potencial con las primitivas correctas:
-
-- `request.json` — contexto estructurado para el agente
-- `instructions.md` — instrucciones legibles para Codex/Claude/Antigravity
-- `current_design.json` — Design actual
-- `original.png/jpg/tiff` — imagen de referencia si se adjunta
-- `render.png` — render actual si existe una corrida previa del verifier
-- `result.json` — salida esperada para reimportar en la app
-
-El objetivo principal es producir un `Design` correcto: geometría, piezas,
-parámetros, unidades, supuestos y alternativas de parametrización. El solver
-local queda como verificación secundaria, no como centro del flujo.
-
-El panel permite adjuntar texto e imagen directamente al agente externo, sin
-configurar `ANTHROPIC_API_KEY` o `GEMINI_API_KEY` en la app.
-
-También puedes usarlo como CLI:
-
-```bash
-python -m ai.agent_harness list
-python -m ai.agent_harness design-review <task_id>
-python -m ai.agent_harness local-calc <task_id>
-python -m ai.agent_harness validate-result <task_id>
-```
-
-Para registrar herramientas externas, define comandos por variable de entorno.
-La app solo ejecuta comandos preconfigurados y requiere habilitación explícita:
-
-```bash
-AGENT_TOOL_CODEX='codex exec "{instructions_path}"'
-AGENT_TOOL_CLAUDE='claude -p "@{instructions_path}"'
-AGENT_TOOL_ANTIGRAVITY='antigravity-ide "{task_dir}"'
-AGENT_HARNESS_ENABLE_RUN=1
-```
-
-Placeholders disponibles: `{task_dir}`, `{request_path}`, `{instructions_path}`,
-`{current_design_path}` y `{result_path}`.
-
-Si quieres usarlo con Codex:
-
-1. Copia `.env.example` a `.env`.
-2. Deja configurado `AGENT_TOOL_CODEX`.
-3. Cambia `AGENT_HARNESS_ENABLE_RUN=1`.
-4. En la app, abre el panel del harness, prepara una tarea y ejecuta Codex.
-
-Para replicar este patrón en otro proyecto, conserva el mismo contrato:
-
-- una carpeta de tarea por caso,
-- `request.json` con objetivo, contexto y archivos de entrada,
-- `instructions.md` para el agente,
-- artefactos adjuntos junto a la tarea,
-- `result.json` como única salida estructurada que la app importa y valida.
+La idea (estilo Text2CAD): tu agente lee el objetivo, construye el `Design`, lo **ve** en el
+PNG, lo verifica e itera, y exporta a COMSOL. El solver local valida; el cerebro es tu LLM.
 
 Para usar el export `.mph` directo a COMSOL (opcional):
 ```bash
@@ -211,11 +184,8 @@ pip install MPh
 
 ## Uso
 
-```bash
-python -m streamlit run app.py
-```
-
-Se abre en `http://localhost:8501`. Tres modos en el toggle de arriba.
+- **Con tu agente** (recomendado): ábrelo en esta carpeta y pídele el potencial; usará `qpot`.
+- **Ver el resultado**: `python -m qpot render --html --open` (3D interactivo, sin servidor).
 
 ---
 
@@ -223,7 +193,15 @@ Se abre en `http://localhost:8501`. Tres modos en el toggle de arriba.
 
 ```
 Proyecto_cuantica/
-├── app.py                       Interfaz Streamlit (3 modos)
+├── AGENTS.md                    ★ Manual del agente (el flujo Designer→Verify→Refiner)
+├── CLAUDE.md                    Pointer a AGENTS.md para Claude Code
+├── PRIMITIVES.md                Esquema del Design + primitivas (generado)
+├── .claude/commands/potential.md  Slash-command /potential (Claude Code)
+│
+├── qpot/                        ★ CLI sin API (lo maneja el agente)
+│   ├── cli.py                   Subcomandos (new/add/set/render/solve/verify/export…)
+│   ├── session.py              Sesión compartida (session/design.json) + solve/export
+│   └── render.py               Render a PNG (matplotlib) + HTML 3D interactivo (plotly)
 │
 ├── core/                        Núcleo científico (independiente de UI)
 │   ├── materials.py             GaAs, InAs, InGaAs, Si, GaN, libre
@@ -238,16 +216,17 @@ Proyecto_cuantica/
 │   ├── exporter.py              CSV, NumPy, COMSOL .m
 │   └── exporter_mph.py          ▶ COMSOL .mph directo (MPh) — con puerta de validación
 │
-├── ai/                          Agentes IA
-│   ├── vision_agent.py          (legacy, usado por modos catálogo)
-│   ├── primitives_spec.py       ▶ doc auto-generada para los prompts
-│   ├── prompts.py               ▶ system prompts + few-shot examples
+├── ai/                          Helpers sin API
+│   ├── primitives_spec.py       ▶ doc de primitivas y esquema (fuente única)
 │   ├── validators.py            ▶ validadores numéricos sin IA
-│   ├── designer_agent.py        ▶ imagen/texto → Design JSON
-│   ├── verifier_agent.py        ▶ comparación visual (multimodal)
-│   ├── refiner_agent.py         ▶ refinador iterativo
 │   ├── event_log.py             ▶ Event log JSONL append-only por run
-│   └── pipeline.py              ▶ orquesta designer→verifier→refiner (con log)
+│   └── agent_harness.py         ▶ contrato del Design / helpers de sesión
+│
+├── legacy/                      Archivado, no se usa en el flujo nuevo
+│   ├── app.py                   visor Streamlit antiguo (con API)
+│   ├── designer_agent.py · verifier_agent.py · refiner_agent.py
+│   ├── vision_agent.py · pipeline.py · prompts.py
+│   └── README.md
 │
 ├── examples/
 │   └── ejemplo_python.py        Uso desde script Python
@@ -347,26 +326,24 @@ Fuente: Vurgaftman et al., J. Appl. Phys. 89, 5815 (2001).
 
 ---
 
-## Calidad de la IA — cómo aseguramos que se equivoque lo menos posible
+## Calidad — cómo el agente se equivoca lo menos posible
 
-### En el lado del Designer (la "primera respuesta")
+El agente (tu LLM) sigue una disciplina definida en [AGENTS.md](AGENTS.md):
 
-1. **System prompt estructurado** con: rol, escalas físicas típicas, primitivas disponibles, schema JSON, estrategia de descomposición en 8 pasos.
-2. **Few-shot examples** — 3 casos completos resueltos con razonamiento explícito.
-3. **Chain of thought obligatorio** — debe producir `<analysis>`, `<design>`, `<self_critique>` antes de cualquier output.
-4. **Self-critique** — la IA enumera 3 cosas que podrían estar mal en su propia respuesta + confianza por componente (estructura / cuantitativos / material).
+### Al construir (Designer)
+1. **Escalas físicas típicas** como sanity check (profundidades en meV, tamaños en nm).
+2. **Estrategia de descomposición**: estructura dominante → geometría → escala → primitivas.
+3. **Auto-crítica**: antes de cerrar, enumera 2-3 riesgos de su parametrización + confianza
+   por componente (estructura / cuantitativos / material).
 
-### En el lado de la Verificación (control de calidad)
+### Al verificar (`qpot verify`)
+4. **Validador numérico sin IA** — checa schema, parámetros en rango físico, NaN/Inf, dominio.
+5. **Render que el agente MIRA** — `session/render.png`; si hay imagen fuente, la compara.
+6. **Solver como señal objetiva** — convergencia y nº de estados ligados.
+7. **Loop de refinamiento** — el agente ajusta piezas y repite `verify` hasta que coincida.
 
-5. **Validador numérico sin IA** — checa schema, parámetros en rango físico, NaN/Inf, dominio.
-6. **Verifier multimodal** — recibe la imagen original + el render generado y devuelve:
-   - `score 0-10`
-   - lista de `matches` (lo que coincide)
-   - lista de `mismatches` (lo que NO coincide, específico)
-   - `suggestions` (cambios concretos)
-7. **Loop de refinamiento** — si score < 7, el Refiner toma el feedback y modifica el Design preservando los matches y corrigiendo los mismatches. Máximo 3 iteraciones.
-
-Toda esta trazabilidad se muestra en la UI: el usuario ve el razonamiento, el score, qué coincide, qué no, y puede revisar cada iteración.
+Todo es inspeccionable: el Design vive en `session/design.json` y los renders/resultados en
+`session/`, así que el estudiante puede revisar cada paso.
 
 ---
 
@@ -492,23 +469,19 @@ Chequeos duros:
 - header `harnex` (si está) bien formado
 - el composer logra construir la expresión MATLAB
 
-## Event log del pipeline IA
+## Artefactos de la sesión
 
-Cada corrida del pipeline produce `runs/{run_id}/` con:
+El CLI `qpot` trabaja sobre `session/` (configurable con `QPOT_SESSION_DIR`):
 
-- `events.jsonl` — eventos tipados append-only (`pipeline_start`, `designer_done`,
-  `validator_done`, `verifier_done`, `refiner_done`, `pipeline_end`, etc.)
-- `original.<ext>` — imagen original si la hubo
-- `render_iter{n}.png` — render del verifier por iteración
+- `design.json` — el Design (fuente de verdad)
+- `potential.html` — vista 3D interactiva (con `render --html`)
+- `render.png` — render del potencial (el agente lo mira)
+- `wavefunctions.png` — funciones de onda / |ψ|²
+- `eigenvalues.csv`, `result.json` — resultados de `solve`
+- `source_image.*` — imagen fuente registrada con `qpot set-image`
 
-Raíz configurable con `QUANTUM_RUNS_DIR`. `PipelineResult.run_id` y `run_dir`
-exponen la ubicación. Inspección:
-
-```python
-from ai.event_log import list_runs, read_events
-list_runs()                # resumen de runs
-read_events("<run_id>")    # eventos completos del run
-```
+> El `event_log` JSONL (`ai/event_log.py`) y la carpeta `runs/` los usaba el pipeline
+> histórico de `legacy/`; siguen disponibles para esa ruta.
 
 ## Sandbox de `raw_expr`
 
@@ -534,6 +507,7 @@ Cada una se puede agregar como módulo nuevo sin reescribir el núcleo.
 ## Créditos
 
 - Solver: método estándar de diferencias finitas para la ecuación de Schrödinger.
-- IA: Claude (Anthropic), con pipeline multi-agente (designer + verifier + refiner).
+- IA: el agente que ya usa el estudiante (Claude Code / ChatGPT / Codex / Antigravity),
+  manejando el CLI `qpot` — sin API de pago embebida.
 - COMSOL via MPh (https://mph.readthedocs.io/) — opcional.
-- Construido con Streamlit, NumPy, SciPy, Plotly, Matplotlib.
+- Construido con NumPy, SciPy, Matplotlib y Plotly (HTML 3D interactivo).

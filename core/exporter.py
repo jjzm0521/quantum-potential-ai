@@ -14,6 +14,31 @@ from .solver import SolverResult
 from .solver_1d import SolverResult1D
 
 
+def _param_unit(name: str) -> str:
+    n = name.lower()
+    if n in {"n", "k", "cycles", "ciclos", "nfoot", "nshape", "nexp"}:
+        return ""
+    if n in {"theta", "phi"} or "angle" in n or n.endswith("deg"):
+        return "deg"
+    if n.startswith("v") or any(t in n for t in ("depth", "amp", "height", "value", "pot", "barrier")):
+        return "eV"
+    return "nm"
+
+
+def _comsol_param_set_lines(params: dict) -> str:
+    lines = []
+    for key, value in params.items():
+        if key in {"L_nm", "N", "material"}:
+            continue
+        if isinstance(value, (int, float)):
+            unit = _param_unit(key)
+            expr = f"{value}[{unit}]" if unit else f"{value}"
+        else:
+            expr = str(value)
+        lines.append(f"model.param.set('{key}', '{expr}');")
+    return "\n        ".join(lines) if lines else "% Sin parámetros de diseño adicionales."
+
+
 def to_csv(result) -> bytes:
     """Eigenvalores en CSV. Acepta SolverResult o SolverResult1D."""
     buf = io.StringIO()
@@ -171,6 +196,7 @@ def to_comsol_m(
     params_str = "\n".join(
         f"%   {k} = {v}" for k, v in params.items()
     )
+    design_params = _comsol_param_set_lines(params)
 
     script = textwrap.dedent(f"""\
         % ============================================================
@@ -197,6 +223,7 @@ def to_comsol_m(
         model.param.set('eV',    '1.60218e-19[J]');
         model.param.set('m_eff', '{m_eff}');
         model.param.set('m_star','m_eff*m_e');
+        {design_params}
 
         % --- Dominio (nm → m) ---
         model.param.set('Lx', '{Lx:.1f}e-9[m]');
@@ -221,24 +248,22 @@ def to_comsol_m(
         model.func('V_pot').set('plotargs', {{'x', '-Lx/2', 'Lx/2'; 'y', '-Ly/2', 'Ly/2'}});
         model.func('V_pot').set('fununit',  'eV');
 
-        % --- Física: CoefficientFormPDE (ecuación de Schrödinger) ---
-        % -∇·(c∇ψ) + aψ = λdψ
-        %   c = ℏ²/(2m*)
-        %   a = V(x,y)
-        %   d = 1  (masa en unidades consistentes)
-        model.physics.create('c', 'CoefficientFormPDE', 'geom1');
-        model.physics('c').field('dependentVariable').field('psi');
-        model.physics('c').prop('Units').set('DependentVariableQuantity', 'dimensionless');
-
-        hb2_2m = 'hbar^2/(2*m_star)';
-        model.physics('c').feature('cfeq1').set('c', {{hb2_2m, '0', '0', hb2_2m}});
-        model.physics('c').feature('cfeq1').set('a', 'V_pot(x,y)*eV');
-        model.physics('c').feature('cfeq1').set('da', '1');
-
-        % Condiciones de frontera Dirichlet (ψ=0 en bordes)
-        model.physics('c').create('dir1', 'DirichletBoundary', 1);
-        model.physics('c').feature('dir1').selection.all;
-        model.physics('c').feature('dir1').set('r', '0');
+        % --- Física: Ecuación de Schrödinger + energía potencial del electrón ---
+        model.physics.create('schr', 'SchrodingerEquation', 'geom1');
+        try
+            model.physics('schr').feature('meff1').set('meff', 'm_eff');
+        catch
+            % El nombre de la propiedad puede variar según versión de COMSOL.
+        end
+        try
+            model.physics('schr').feature('ve1').active(false);
+        catch
+            % Deshabilita el potencial por defecto si existe.
+        end
+        model.physics('schr').create('ve_afm', 'ElectronPotentialEnergy', 2);
+        model.physics('schr').feature('ve_afm').selection.all;
+        model.physics('schr').feature('ve_afm').set('Ve_src', 'userdef');
+        model.physics('schr').feature('ve_afm').set('Ve', 'V_pot(x,y)');
 
         % --- Malla ---
         model.mesh.create('mesh1', 'geom1');

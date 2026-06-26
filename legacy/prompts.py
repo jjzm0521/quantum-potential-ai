@@ -6,7 +6,7 @@ con la dim apropiada para mantener el contexto enfocado.
 """
 
 from __future__ import annotations
-from .primitives_spec import primitives_documentation, design_schema
+from ai.primitives_spec import primitives_documentation, design_schema
 
 
 # ---------------------------------------------------------------------------

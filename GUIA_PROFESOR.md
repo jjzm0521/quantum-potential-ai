@@ -1,5 +1,13 @@
 # Guía para el profesor — Quantum Potential AI
 
+> ⚠ **Actualización (junio 2026): el flujo cambió.** Ya **no se usa ninguna API key** ni la
+> página de Streamlit como interfaz principal. El "cerebro" ahora es tu propio agente
+> (Claude Code / ChatGPT / Codex / Antigravity) manejando el repo con el CLI `qpot`. Lee
+> **[README.md](README.md)** y **[AGENTS.md](AGENTS.md)**. Las secciones de abajo que hablan
+> de "pegar la API key" o de los modos de la app describen la versión anterior (archivada en
+> `legacy/`); se conservan como referencia. Para ver el potencial ya no hace falta servidor:
+> `python -m qpot render --html --open` abre una superficie 3D interactiva en el navegador.
+
 > Documento pensado para alguien que sabe **física cuántica de semiconductores** pero **no programa**.
 > Si en algún momento ves una palabra rara, hay un glosario al final.
 

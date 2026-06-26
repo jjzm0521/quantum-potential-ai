@@ -1,5 +1,9 @@
 # Quantum Potential AI — Hoja de referencia
 
+> ⚠ **El flujo cambió (junio 2026):** sin API key. Usa tu agente + el CLI `qpot`
+> (`python -m qpot new/add/set/render/solve/verify/export`). Ver **[AGENTS.md](AGENTS.md)** y
+> **[README.md](README.md)**. Lo de abajo describe la app vieja con API (archivada en `legacy/`).
+
 > Para tener al lado del computador. Si necesitas más detalle, ver `GUIA_PROFESOR.md`.
 
 ---

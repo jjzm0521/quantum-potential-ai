@@ -1,5 +1,11 @@
 # Cómo leer la pantalla de la app
 
+> ⚠ **Actualización (junio 2026):** la interfaz principal ya no es esta app con API key. Ahora
+> manejas el proyecto con tu agente (Claude Code / ChatGPT / Codex) y el CLI `qpot` — ver
+> **[AGENTS.md](AGENTS.md)**. Para ver el potencial: `python -m qpot render --html --open`
+> (superficie 3D interactiva en el navegador, sin servidor). Este texto describe la app vieja
+> (Streamlit con API, archivada en `legacy/`) y se conserva como referencia.
+
 Si abriste la app y no sabes qué es cada cosa, este documento es para ti.
 
 ---
