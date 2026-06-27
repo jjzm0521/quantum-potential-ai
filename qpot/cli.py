@@ -16,6 +16,8 @@ import sys
 from pathlib import Path
 
 from . import session, render
+from core import features as _features
+from core import image_analysis as _image_analysis
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +229,21 @@ def cmd_set_image(args) -> int:
     return 0
 
 
+def cmd_analyze_image(args) -> int:
+    """Visión clásica (sin API): sugiere preset + params iniciales desde la foto."""
+    suggestion = _image_analysis.analyze_image(args.path)
+    # Registra la imagen como fuente para que verify la compare luego.
+    dst = session.register_source_image(args.path)
+    suggestion["registered_as"] = str(dst)
+    suggestion["next_action"] = (
+        "Sugerencia de ARRANQUE (no aplicada). Tú decides: usa "
+        "`qpot from-preset <suggested_preset> --dim <suggested_dim> "
+        "--params '<suggested_params>'`, luego `qpot verify` y refina."
+    )
+    _print_json(suggestion)
+    return 0
+
+
 def cmd_clean(args) -> int:
     session.clear_session()
     _ok(f"Sesión limpiada: {session.session_dir()}")
@@ -278,6 +295,13 @@ def cmd_verify(args) -> int:
     report["render_png"] = str(render_png)
     report["potential_range_eV"] = session._range_summary(field["V_eV"])
 
+    # 2b. Features cuantitativas: nº de pozos, posiciones, simetría → el Refiner
+    # compara con NÚMEROS, no adivinando sobre el PNG.
+    try:
+        report["features"] = _features.extract_features(field)
+    except Exception as exc:  # noqa: BLE001
+        report["features"] = {"error": str(exc)}
+
     # 3. Solve (diagnóstico físico)
     try:
         res, summary = session.solve_design(design, n_states=args.n_states)
@@ -298,16 +322,20 @@ def cmd_verify(args) -> int:
     report["zone_overlap"] = {"ok": not overlap, "issues": overlap}
 
     # 4. Imagen fuente → instrucción de comparación visual
+    feats = report.get("features", {})
+    feats_txt = _features_summary(feats)
     src = session.source_image_path()
     if src is not None:
         report["source_image"] = str(src)
         report["visual_check"] = (
-            "Hay imagen fuente. COMPÁRALA con render_png: ¿coinciden geometría, "
-            "número de pozos/barreras, simetría y escalas? Si no, ajusta piezas y repite verify."
+            f"{feats_txt} Hay imagen fuente: COMPÁRALA con render_png y con estos números. "
+            "¿Coinciden número de pozos/barreras, posiciones, simetría y escalas? "
+            "Si no, ajusta piezas y repite verify."
         )
     else:
         report["visual_check"] = (
-            "No hay imagen fuente. Compara render_png contra la descripción textual del objetivo."
+            f"{feats_txt} No hay imagen fuente: compara estos números y el render_png "
+            "contra la descripción textual del objetivo."
         )
 
     # 5. Veredicto objetivo (la calificación final la pone el agente)
@@ -321,6 +349,30 @@ def cmd_verify(args) -> int:
 
     _print_json(report)
     return 0 if objective_ok else 1
+
+
+def _features_summary(feats: dict) -> str:
+    """Resumen en lenguaje natural de las features para el campo visual_check."""
+    if not feats or "error" in feats:
+        return "No se pudieron extraer features cuantitativas."
+    nw = feats.get("n_wells", 0)
+    parts = [f"Detecté {nw} pozo(s)"]
+    if feats.get("well_positions_nm"):
+        parts.append(f"en x={feats['well_positions_nm']} nm")
+    elif feats.get("well_centroids_nm"):
+        parts.append(f"en {feats['well_centroids_nm']} nm")
+    if feats.get("well_depths_meV"):
+        parts.append(f"profundidad {feats['well_depths_meV']} meV")
+    nb = feats.get("n_barriers")
+    if nb:
+        parts.append(f"{nb} barrera(s)")
+    if feats.get("symmetric") is not None:
+        parts.append("simétrico" if feats["symmetric"] else "asimétrico")
+    if feats.get("ring_like"):
+        parts.append("forma de anillo")
+    if feats.get("radial_symmetry"):
+        parts.append("simetría radial")
+    return ", ".join(parts) + "."
 
 
 def _verify_hints(issues: list[str], solver: dict) -> list[str]:
@@ -428,6 +480,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("set-image", help="Registrar imagen fuente (AFM/SEM/esquema)")
     sp.add_argument("path")
     sp.set_defaults(func=cmd_set_image)
+
+    sp = sub.add_parser("analyze-image",
+                        help="Visión clásica: sugiere preset+params desde una foto (sin API)")
+    sp.add_argument("path")
+    sp.set_defaults(func=cmd_analyze_image)
 
     sub.add_parser("clean", help="Limpiar artefactos de la sesión actual").set_defaults(func=cmd_clean)
 

@@ -34,6 +34,9 @@ Este es el corazón del trabajo. Repítelo hasta que el potencial quede **bien d
    - renderiza el potencial a `session/render.png` → **ábrelo/léelo y MÍRALO**;
    - valida el Design (esquema, física, numérico);
    - resuelve Schrödinger y reporta convergencia, eigenvalores y nº de estados ligados;
+   - extrae **features cuantitativas** (`report.features`): nº de pozos, posiciones,
+     profundidades, simetría (1D) / centroides, `ring_like`, `radial_symmetry` (2D).
+     Úsalas para comparar con NÚMEROS contra el objetivo, no solo mirando el PNG;
    - si hay imagen fuente (`qpot set-image`), te pide compararla con el render.
    Da una señal objetiva `objective_ok`. **La calificación final (0-10) la pones tú** mirando
    el PNG contra el objetivo (criterios en §6).
@@ -73,6 +76,7 @@ consultas (`state`, `describe`, `solve`, `verify`, `validate`) imprimen JSON.
 | `param <nombre> <valor>` | Define/actualiza un parámetro nombrado (bloque `parameters`). Sin valor → lo borra. |
 | `from-preset <name> --dim {1,2} [--params '{json}']` | Carga un preset del catálogo. |
 | `set-image <path>` | Registra imagen fuente (`session/source_image.*`). Léela tú. |
+| `analyze-image <path>` | Visión clásica (sin API): detecta blobs/anillos/simetría y **sugiere** preset + params de arranque (JSON). Registra la imagen como fuente. Tú decides aplicarlo con `from-preset`. |
 | `validate` | Valida el Design (sin resolver). |
 | `solve [--n-states N]` | Resuelve; guarda `wavefunctions.png`, `eigenvalues.csv`, `result.json`. |
 | `verify [--n-states N]` | **El loop**: render + validate + solve + chequeo de zonas solapadas (`zone_overlap`) → reporte objetivo. |
