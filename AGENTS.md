@@ -37,6 +37,12 @@ Este es el corazón del trabajo. Repítelo hasta que el potencial quede **bien d
    - extrae **features cuantitativas** (`report.features`): nº de pozos, posiciones,
      profundidades, simetría (1D) / centroides, `ring_like`, `radial_symmetry` (2D).
      Úsalas para comparar con NÚMEROS contra el objetivo, no solo mirando el PNG;
+   - contrasta contra teoría (`report.analytic_benchmark`): compara E1−E0 numérico
+     con el modelo analítico que mejor aplique (ħω del fondo armónico o partícula en
+     caja). Desviación pequeña = solver validado; grande = anarmonicidad, pozo finito
+     o splitting túnel — **explícale al estudiante cuál es su caso**;
+   - los issues `AVISO:` (p. ej. paredes de confinamiento muy altas) NO bloquean
+     `objective_ok`: tú juzgas si son intencionales;
    - si hay imagen fuente (`qpot set-image`), te pide compararla con el render.
    Da una señal objetiva `objective_ok`. **La calificación final (0-10) la pones tú** mirando
    el PNG contra el objetivo (criterios en §6).
@@ -80,6 +86,7 @@ consultas (`state`, `describe`, `solve`, `verify`, `validate`) imprimen JSON.
 | `validate` | Valida el Design (sin resolver). |
 | `solve [--n-states N]` | Resuelve; guarda `wavefunctions.png`, `eigenvalues.csv`, `result.json`. |
 | `verify [--n-states N]` | **El loop**: render + validate + solve + chequeo de zonas solapadas (`zone_overlap`) → reporte objetivo. |
+| `sweep <param> --range=a:b:n [--piece IDX] [--n-states N]` | **Barrido paramétrico** E_n(parámetro), la gráfica clásica de análisis (estilo COMSOL, pero local). Barre un parámetro nombrado o (con `--piece`) un arg de una pieza; guarda `sweep.csv` + `sweep.png`. Usa `--range=-0.5:-0.1:5` (con `=`) para valores negativos. No modifica el Design. |
 | `export --format {csv,npz,m,mph,recipe} [--out path] [--n-states N]` | Exporta. |
 
 `set` parsea el valor como JSON si puede: `qpot set 0 value -0.30`, `qpot set 1 sigma 8`,

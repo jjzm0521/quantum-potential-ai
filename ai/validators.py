@@ -51,7 +51,10 @@ def validate_numerical_1d(design: dict, x: np.ndarray) -> list[str]:
     if len(V_finite) > 0:
         V_range = float(V_finite.max() - V_finite.min())
         if V_range > 50.0:
-            issues.append(f"Rango de V (excluyendo paredes) = {V_range:.2f} eV >50 eV.")
+            # AVISO (no bloquea objective_ok): paredes de confinamiento (Morse, r^4)
+            # llegan a esto legítimamente; el agente juzga si es intencional.
+            issues.append(f"AVISO: rango de V (excluyendo paredes) = {V_range:.2f} eV >50 eV. "
+                          f"¿Confinamiento intencional o coeficiente mal escalado?")
         if V_range < 1e-6:
             issues.append("V casi constante — sin estructura.")
     return issues
@@ -220,9 +223,11 @@ def validate_numerical(design: dict, X: np.ndarray, Y: np.ndarray) -> list[str]:
         issues.append(f"V contiene {np.sum(~np.isfinite(V))} valores NaN/Inf.")
 
     V_range = float(V.max() - V.min())
-    if V_range > 100.0:   # 100 eV de rango es absurdo
-        issues.append(f"Rango de V={V_range:.2f} eV demasiado grande (>100 eV). "
-                      f"Probable bug en algún coeficiente.")
+    if V_range > 100.0:
+        # AVISO (no bloquea objective_ok): las paredes r^4 de anillos/dots superan
+        # esto por diseño; el agente juzga si es intencional o un coeficiente malo.
+        issues.append(f"AVISO: rango de V={V_range:.2f} eV muy grande (>100 eV). "
+                      f"¿Pared de confinamiento intencional o bug en un coeficiente?")
     if V_range < 1e-6:
         issues.append("V es prácticamente constante — sin estructura para resolver.")
 

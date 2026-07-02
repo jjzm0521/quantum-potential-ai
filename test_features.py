@@ -59,6 +59,35 @@ def test_quantum_dot_2d():
     assert f["n_wells"] >= 1, f
 
 
+def test_analytic_benchmark_harmonic():
+    # Oscilador armónico: E1−E0 debe reproducir ħω casi exacto (<2%).
+    design = session.preset_design("harmonic", 1)
+    field = session.evaluate_potential(design)
+    _, summary = session.solve_design(design, n_states=3)
+    b = features.harmonic_benchmark(field, summary["m_eff"], summary["energies_meV"])
+    assert b["applicable"] and b["model"] == "harmonic_bottom", b
+    assert b["deviation_pct"] < 2.0, b
+
+
+def test_analytic_benchmark_infinite_well():
+    # Caja infinita: espaciado E1−E0 = 3·E1_box (<5%).
+    design = session.preset_design("infinite_well", 1)
+    field = session.evaluate_potential(design)
+    _, summary = session.solve_design(design, n_states=3)
+    b = features.harmonic_benchmark(field, summary["m_eff"], summary["energies_meV"])
+    assert b["applicable"] and b["model"] == "particle_in_box", b
+    assert b["deviation_pct"] < 5.0, b
+
+
+def test_solver_morse_converges():
+    # Regresión: la pared de Morse antes tumbaba ARPACK (shift-invert fallback).
+    design = session.preset_design("morse", 1)
+    _, summary = session.solve_design(design, n_states=4)
+    assert summary["convergence_ok"], summary
+    E = summary["energies_meV"]
+    assert E[0] < -400, E  # fondo del pozo Morse (De=0.5 eV)
+
+
 def _synthetic(kind: str, path: str) -> str:
     import matplotlib.image as mpimg
     N = 200

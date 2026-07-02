@@ -284,9 +284,12 @@ def cmd_verify(args) -> int:
     report: dict = {"design_dim": int(design.get("dim", 2)),
                     "material": design.get("material", "GaAs")}
 
-    # 1. Validación
-    issues = session.validation_issues(design)
-    report["validation"] = {"ok": not issues, "issues": issues}
+    # 1. Validación. Los "AVISO:" no bloquean objective_ok: son juicio del agente
+    # (p. ej. paredes de confinamiento grandes pero intencionales).
+    all_issues = session.validation_issues(design)
+    issues = [i for i in all_issues if not i.startswith("AVISO")]
+    warnings = [i for i in all_issues if i.startswith("AVISO")]
+    report["validation"] = {"ok": not issues, "issues": issues, "warnings": warnings}
 
     # 2. Render del potencial (para que el agente lo VEA)
     field = session.evaluate_potential(design)
@@ -314,6 +317,12 @@ def cmd_verify(args) -> int:
             "n_bound_states": summary["n_bound_states"],
             "wavefunctions_png": str(wf_png),
         }
+        # Contraste analítico: ħω del fondo del pozo vs E1−E0 numérico.
+        try:
+            report["analytic_benchmark"] = _features.harmonic_benchmark(
+                field, summary["m_eff"], summary["energies_meV"])
+        except Exception as exc:  # noqa: BLE001
+            report["analytic_benchmark"] = {"applicable": False, "reason": str(exc)}
     except Exception as exc:  # noqa: BLE001
         report["solver"] = {"error": str(exc)}
 
@@ -387,6 +396,86 @@ def _verify_hints(issues: list[str], solver: dict) -> list[str]:
     if not hints:
         hints.append("Todo objetivo OK. Revisa el PNG y, si coincide con el objetivo, exporta.")
     return hints
+
+
+def cmd_sweep(args) -> int:
+    """Barrido paramétrico E_n(parámetro) — la gráfica clásica de análisis (sin COMSOL).
+
+    Barre un parámetro nombrado (bloque `parameters`) o, con --piece, un arg de una
+    pieza. Resuelve Schrödinger en cada punto y guarda sweep.csv + sweep.png.
+    """
+    import copy as _copy
+
+    try:
+        lo_s, hi_s, n_s = args.range.split(":")
+        lo, hi, n_pts = float(lo_s), float(hi_s), int(n_s)
+    except ValueError:
+        _ok("Formato de --range inválido; usa a:b:n  (p. ej. 0.1:0.5:9)")
+        return 1
+    if n_pts < 2:
+        _ok("--range necesita al menos 2 puntos.")
+        return 1
+
+    base = session.load_design()
+    if args.piece is None:
+        params = base.get("parameters") or {}
+        if args.name not in params:
+            _ok(f"'{args.name}' no está en `parameters` {list(params)}. "
+                f"Defínelo con `qpot param {args.name} <valor>` o usa --piece IDX.")
+            return 1
+    else:
+        pieces = base.get("pieces", [])
+        if not (0 <= args.piece < len(pieces)):
+            _ok(f"Índice --piece {args.piece} fuera de rango (hay {len(pieces)} piezas).")
+            return 1
+
+    values = [lo + (hi - lo) * i / (n_pts - 1) for i in range(n_pts)]
+    rows: list[dict] = []
+    energies_all: list[list[float]] = []
+    for v in values:
+        d = _copy.deepcopy(base)
+        if args.piece is None:
+            d["parameters"][args.name] = v
+        else:
+            piece = d["pieces"][args.piece]
+            if args.name in ("value",):
+                piece[args.name] = v
+            else:
+                piece.setdefault("args", {})[args.name] = v
+        try:
+            _, summary = session.solve_design(d, n_states=args.n_states)
+            energies = summary["energies_meV"]
+            rows.append({"value": v, "ok": True, "energies_meV": energies,
+                         "n_bound_states": summary["n_bound_states"]})
+            energies_all.append(energies)
+        except Exception as exc:  # noqa: BLE001
+            rows.append({"value": v, "ok": False, "error": str(exc)})
+            energies_all.append([])
+
+    # Artefactos: CSV (valor, E0..Ek) + PNG
+    csv_path = session.artifact("sweep.csv")
+    n_max = max((len(e) for e in energies_all), default=0)
+    with open(csv_path, "w", encoding="utf-8") as fh:
+        fh.write(args.name + "," + ",".join(f"E{i}_meV" for i in range(n_max)) + "\n")
+        for row, es in zip(rows, energies_all):
+            fh.write(f"{row['value']}" + "".join(f",{e}" for e in es) + "\n")
+    png_path = session.artifact("sweep.png")
+    if any(energies_all):
+        render.render_sweep(values, energies_all, args.name, png_path)
+
+    ok_pts = sum(1 for r in rows if r["ok"])
+    _print_json({
+        "param": args.name,
+        "piece": args.piece,
+        "n_points": n_pts,
+        "n_solved": ok_pts,
+        "results": rows,
+        "artifacts": {"csv": str(csv_path),
+                      "png": str(png_path) if any(energies_all) else None},
+        "note": "El Design en sesión NO cambió; el barrido usa copias. "
+                "MIRA sweep.png para el comportamiento E_n(parámetro).",
+    })
+    return 0 if ok_pts == n_pts else 1
 
 
 def cmd_export(args) -> int:
@@ -502,6 +591,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("verify", help="Loop: render + validar + resolver (señal objetiva)")
     sp.add_argument("--n-states", type=int, default=6, dest="n_states")
     sp.set_defaults(func=cmd_verify)
+
+    sp = sub.add_parser("sweep", help="Barrido paramétrico: E_n(parámetro) → sweep.csv/png")
+    sp.add_argument("name", help="Parámetro nombrado (bloque parameters) o arg de pieza con --piece")
+    sp.add_argument("--range", required=True, help="a:b:n  (p. ej. 0.1:0.5:9)")
+    sp.add_argument("--piece", type=int, default=None, help="Índice de pieza (barre su arg `name`)")
+    sp.add_argument("--n-states", type=int, default=4, dest="n_states")
+    sp.set_defaults(func=cmd_sweep)
 
     sp = sub.add_parser("export", help="Exportar (csv/npz/m/mph/recipe)")
     sp.add_argument("--format", required=True, choices=session.EXPORT_FORMATS)

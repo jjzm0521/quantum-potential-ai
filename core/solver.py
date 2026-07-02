@@ -26,6 +26,22 @@ EV    = 1.60218e-19        # J/eV
 NM    = 1e-9               # m/nm
 
 
+def lowest_eigsh(H, k: int, v_min_J: float):
+    """Eigenvalores más bajos de H, robusto ante espectros muy anchos.
+
+    Potenciales con paredes repulsivas (Morse, triangular, r^4) tienen V_max
+    enorme y `eigsh(which="SA")` puede no converger (ARPACK -1). El modo
+    shift-invert (sigma cerca del fondo del pozo) converge rápido en esos casos;
+    lo usamos como fallback para no pagar la factorización LU cuando no hace falta.
+    """
+    from scipy.sparse.linalg import ArpackNoConvergence
+    try:
+        return eigsh(H, k=k, which="SA")
+    except ArpackNoConvergence:
+        sigma = v_min_J - abs(v_min_J) * 1e-3 - 1e-25
+        return eigsh(H, k=k, sigma=sigma, which="LM")
+
+
 @dataclass
 class SolverResult:
     energies_meV: np.ndarray      # shape (n_states,)
@@ -86,7 +102,7 @@ def solve(
 
     # Resolver n_states eigenvalores más bajos
     n_req = min(n_states, Nx * Ny - 2)
-    eigenvalues, eigenvectors = eigsh(H, k=n_req, which="SA")
+    eigenvalues, eigenvectors = lowest_eigsh(H, n_req, float(V_flat.min()))
 
     # Ordenar por energía
     idx = np.argsort(eigenvalues)

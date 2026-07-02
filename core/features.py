@@ -157,6 +157,122 @@ def _features_2d(field: dict) -> dict:
     return feats
 
 
+def harmonic_benchmark(field: dict, m_eff: float, energies_meV: list[float]) -> dict:
+    """Contraste analítico: aproximación armónica del fondo del pozo.
+
+    Para cualquier pozo suave, cerca del mínimo V ≈ V0 + ½ m ω² q² y el espaciado
+    E1−E0 debe acercarse a ħω = ħ√(V''/m). La desviación mide la anarmonicidad —
+    criterio de investigador clásico para validar el numérico contra la teoría.
+    Devuelve dict JSON-serializable; {"applicable": False, ...} si no hay pozo suave.
+    """
+    HBAR = 1.054571817e-34  # J·s
+    M_E = 9.10938e-31       # kg
+    EV = 1.60218e-19        # J/eV
+    NM = 1e-9               # m/nm
+
+    if len(energies_meV) < 2:
+        return {"applicable": False, "reason": "menos de 2 estados resueltos"}
+
+    m = m_eff * M_E
+    if field["dim"] == 1:
+        x = np.asarray(field["x_nm"], dtype=float)
+        V = np.asarray(field["V_eV"], dtype=float)
+        i0 = int(np.nanargmin(np.where(np.isfinite(V), V, np.inf)))
+        if i0 <= 1 or i0 >= len(x) - 2:
+            return {"applicable": False, "reason": "mínimo en el borde del dominio"}
+
+        # Dos modelos candidatos — caja (fondo plano) y armónico (fondo curvo) — y
+        # reportamos el que MEJOR ajusta E1−E0. Clasificar por forma es frágil
+        # (paredes enormes distorsionan las escalas); dejar que compitan es robusto.
+        dx_nm = x[1] - x[0]
+        E10 = round(float(energies_meV[1] - energies_meV[0]), 3)
+        finite = V[np.isfinite(V)]
+        v_min = float(finite.min())
+        depth = abs(v_min) if v_min < -1e-9 else float(np.percentile(finite, 99)) - v_min
+        depth = max(depth, 1e-9)
+
+        # Fondo: tramo contiguo alrededor del mínimo dentro del 1% de la profundidad.
+        flat = np.abs(V - V[i0]) < 0.01 * depth
+        l = r = i0
+        while l > 0 and flat[l - 1]:
+            l -= 1
+        while r < len(x) - 1 and flat[r + 1]:
+            r += 1
+        w_pts = r - l + 1
+
+        candidates: list[dict] = []
+        if w_pts >= 5:  # caja: E_n ∝ n²/w² con w = ancho del fondo plano
+            w = w_pts * dx_nm * NM
+            gap_box = 3 * (HBAR**2 * np.pi**2) / (2 * m * w**2) / EV * 1000  # meV
+            candidates.append({
+                "model": "particle_in_box",
+                "well_width_nm": round(w / NM, 2),
+                "predicted_gap_meV": round(float(gap_box), 3),
+                "deviation_pct": round(abs(E10 - gap_box) / (abs(gap_box) + 1e-12) * 100, 1),
+            })
+        # Armónico: curvatura en el CENTRO del fondo (no en el borde de una mask).
+        mid = (l + r) // 2
+        k = min(3, mid, len(x) - 1 - mid)
+        if k >= 1:
+            d2V = (V[mid + k] - 2 * V[mid] + V[mid - k]) * EV / (k * dx_nm * NM) ** 2
+            if d2V > 0:
+                hw = float(HBAR * np.sqrt(d2V / m) / EV * 1000)  # ħω en meV
+                candidates.append({
+                    "model": "harmonic_bottom",
+                    "hbar_omega_meV": round(hw, 3),
+                    "predicted_gap_meV": round(hw, 3),
+                    "deviation_pct": round(abs(E10 - hw) / (abs(hw) + 1e-12) * 100, 1),
+                })
+        if not candidates:
+            return {"applicable": False, "reason": "sin fondo plano ni curvatura positiva"}
+
+        best = min(candidates, key=lambda c: c["deviation_pct"])
+        dev = best["deviation_pct"]
+        interpretation = (
+            f"E1−E0 numérico coincide con el modelo '{best['model']}' (desv. {dev}%): "
+            "el solver reproduce la teoría." if dev < 15 else
+            f"E1−E0 se desvía {dev}% del mejor modelo analítico ({best['model']}): "
+            "esperable en pozos finitos (penetración de ψ), dobles pozos (splitting "
+            "túnel) o potenciales muy anarmónicos. Verifica que sea tu caso."
+        )
+        return {"applicable": True, **best, "E1_minus_E0_meV": E10,
+                "models_tested": [c["model"] for c in candidates],
+                "interpretation": interpretation}
+    else:
+        x = np.asarray(field["x_nm"], dtype=float)
+        y = np.asarray(field["y_nm"], dtype=float)
+        V = np.asarray(field["V_eV"], dtype=float)
+        Vf = np.where(np.isfinite(V), V, np.inf)
+        iy, ix = np.unravel_index(int(np.nanargmin(Vf)), V.shape)
+        if not (1 < ix < len(x) - 2 and 1 < iy < len(y) - 2):
+            return {"applicable": False, "reason": "mínimo en el borde del dominio"}
+        dx = (x[1] - x[0]) * NM
+        dy = (y[1] - y[0]) * NM
+        d2Vx = (V[iy, ix + 1] - 2 * V[iy, ix] + V[iy, ix - 1]) * EV / dx**2
+        d2Vy = (V[iy + 1, ix] - 2 * V[iy, ix] + V[iy - 1, ix]) * EV / dy**2
+        if d2Vx <= 0 or d2Vy <= 0:
+            return {"applicable": False, "reason": "curvatura no positiva en el mínimo"}
+        omegas = [np.sqrt(d2Vx / m), np.sqrt(d2Vy / m)]
+
+    hbar_omega_meV = [round(float(HBAR * w / EV * 1000), 3) for w in omegas]
+    E10 = round(float(energies_meV[1] - energies_meV[0]), 3)
+    # En 2D el primer espaciado corresponde al ω menor (modo blando).
+    ref = min(hbar_omega_meV)
+    dev = round(abs(E10 - ref) / (abs(ref) + 1e-12) * 100, 1)
+    return {
+        "applicable": True,
+        "hbar_omega_meV": hbar_omega_meV,
+        "E1_minus_E0_meV": E10,
+        "deviation_pct": dev,
+        "interpretation": (
+            "E1−E0 ≈ ħω → pozo casi armónico cerca del fondo."
+            if dev < 10 else
+            "Desviación >10% → anarmonicidad apreciable o estados que exploran "
+            "más allá del fondo del pozo (normal en pozos finitos/anchos)."
+        ),
+    }
+
+
 def _radial_profile(x: np.ndarray, y: np.ndarray, V: np.ndarray,
                     cx: float, cy: float):
     """Perfil radial promedio de V alrededor de (cx, cy)."""

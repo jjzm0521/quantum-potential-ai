@@ -176,6 +176,32 @@ def _render_wavefunctions_2d(result, out: Path, n_show: int) -> None:
     plt.close(fig)
 
 
+def render_sweep(values: list[float], energies: list[list[float]], param_name: str,
+                 out_path: str | Path) -> Path:
+    """E_n(parámetro): la gráfica clásica de barrido paramétrico (estilo COMSOL).
+
+    `energies[i]` = lista de eigenvalores (meV) para values[i]; puede variar de
+    largo si algún punto convergió con menos estados.
+    """
+    out = Path(out_path)
+    n_max = max(len(e) for e in energies)
+    fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=110)
+    for n in range(n_max):
+        xs = [v for v, e in zip(values, energies) if len(e) > n]
+        ys = [e[n] for e in energies if len(e) > n]
+        ax.plot(xs, ys, marker="o", ms=3.5, lw=1.6, label=f"E{n}")
+    ax.axhline(0, color="#999", lw=0.8, ls="--")
+    ax.set_xlabel(param_name)
+    ax.set_ylabel("Energía (meV)")
+    ax.set_title(f"Eigenvalores vs {param_name}")
+    ax.legend(fontsize=8, ncols=2)
+    ax.grid(alpha=0.25)
+    fig.tight_layout()
+    fig.savefig(out)
+    plt.close(fig)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # HTML 3D interactivo (plotly, opcional) — sin servidor, se abre en el navegador
 # ---------------------------------------------------------------------------

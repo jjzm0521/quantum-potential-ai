@@ -16,7 +16,7 @@ from scipy.sparse import diags
 from scipy.sparse.linalg import eigsh
 from dataclasses import dataclass
 
-from .solver import HBAR, M_E, EV, NM
+from .solver import HBAR, M_E, EV, NM, lowest_eigsh
 
 
 @dataclass
@@ -60,7 +60,7 @@ def solve_1d(
     H = T + V_op
 
     n_req = min(n_states, N - 2)
-    eigenvalues, eigenvectors = eigsh(H, k=n_req, which="SA")
+    eigenvalues, eigenvectors = lowest_eigsh(H, n_req, float(V_J.min()))
 
     # Ordenar
     idx = np.argsort(eigenvalues)
