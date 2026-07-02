@@ -37,19 +37,37 @@ def _features_1d(field: dict) -> dict:
     if finite.size == 0:
         return {"error": "potencial sin valores finitos"}
     v_min, v_max = float(finite.min()), float(finite.max())
-    span = v_max - v_min
 
-    # Prominencia mínima ~5% del rango para ignorar ruido numérico.
+    # Clip robusto: paredes repulsivas (Morse, triangular, r^4) inflan v_max y
+    # aplastarían la prominencia. Mismo criterio que render._clip_range: si hay pozo
+    # (v_min<0), el techo útil es ~media profundidad por encima de cero.
+    if v_min < -1e-6:
+        hi = min(float(np.percentile(finite, 90)), abs(v_min) * 0.5)
+        if hi <= v_min:
+            hi = v_min + abs(v_min) * 0.5 + 1.0
+    else:
+        # Sin pozo (barrera/step): p99 conserva la estructura positiva sin las
+        # paredes infinitas del dominio.
+        hi = float(np.percentile(finite, 99))
+    Vc = np.clip(np.where(np.isfinite(V), V, v_max), v_min, hi)
+    span = hi - v_min
+
+    # Prominencia mínima ~5% del rango (clipeado) para ignorar ruido numérico.
     prom = max(1e-6, 0.05 * span)
 
     # Pozos = mínimos de V = picos de -V. distance evita duplicados pegados.
     min_dist = max(1, len(x) // 50)
-    well_idx, _ = find_peaks(-V, prominence=prom, distance=min_dist)
+    well_idx, _ = find_peaks(-Vc, prominence=prom, distance=min_dist)
     # Barreras = máximos locales (interiores, no las paredes del dominio).
-    barr_idx, _ = find_peaks(V, prominence=prom, distance=min_dist)
+    barr_idx, _ = find_peaks(Vc, prominence=prom, distance=min_dist)
+
+    # Profundidad física: respecto a 0 si el pozo es negativo, si no al techo clipeado.
+    def _depth(i: int) -> float:
+        ref = 0.0 if V[i] < 0 else hi
+        return round(float(ref - V[i]), 2)
 
     well_pos = [round(float(x[i]), 2) for i in well_idx]
-    well_depth = [round(float(v_max - V[i]), 2) for i in well_idx]
+    well_depth = [_depth(i) for i in well_idx]
     barr_pos = [round(float(x[i]), 2) for i in barr_idx]
     barr_h = [round(float(V[i] - v_min), 2) for i in barr_idx]
 

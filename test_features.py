@@ -32,6 +32,20 @@ def test_finite_well_1d():
     assert f["symmetric"] is True, f
 
 
+def test_morse_1d():
+    # La pared repulsiva de Morse infla v_max; el clip robusto debe seguir viendo el pozo.
+    f = features.extract_features(_field("morse", 1))
+    assert f["n_wells"] == 1, f
+    assert 400 < f["well_depths_meV"][0] < 600, f
+
+
+def test_barrier_1d():
+    # Potencial sin pozo: la barrera positiva no debe desaparecer con el clip.
+    f = features.extract_features(_field("barrier", 1))
+    assert f["n_wells"] == 0, f
+    assert f["n_barriers"] == 1, f
+
+
 def test_quantum_ring_2d():
     f = features.extract_features(_field("quantum_ring", 2))
     assert f["ring_like"] is True, f
