@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import zipfile
+from pathlib import Path
 
 import pytest
 
@@ -65,6 +66,20 @@ def test_project_export_does_not_include_itself(tmp_path, monkeypatch):
     with zipfile.ZipFile(bundle) as zf:
         assert "demo/exports/demo.zip" not in zf.namelist()
         assert "demo/design.json" in zf.namelist()
+
+
+def test_install_demo_creates_independent_active_project(tmp_path, monkeypatch):
+    monkeypatch.setenv(projects.WORKSPACE_ENV, str(tmp_path / "workspace"))
+    source = Path(__file__).resolve().parents[1] / "examples" / "punto_cuantico_3_picos_1_pozo"
+
+    installed = projects.install_demo(source, "Clase profesor")
+
+    assert installed.name == "clase-profesor"
+    assert projects.active_slug() == "clase-profesor"
+    assert (installed / "design.json").is_file()
+    assert (installed / "target.json").is_file()
+    assert (installed / "agent_assessment.json").is_file()
+    assert (installed / "source_image.png").is_file()
 
 
 def test_atomic_save_keeps_history(tmp_path, monkeypatch):

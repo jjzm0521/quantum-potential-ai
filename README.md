@@ -20,6 +20,25 @@ qpot --help
 Para desarrollo: `python -m pip install -e '.[dev]'`. Para generar `.mph` en una máquina
 con COMSOL 5.6: `python -m pip install -e '.[comsol56]'`.
 
+### Prueba rápida desde un clon nuevo (Windows PowerShell)
+
+```powershell
+git clone https://github.com/jjzm0521/quantum-potential-ai.git
+cd quantum-potential-ai
+py -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -e .
+qpot --help
+qpot demo install tres-picos
+qpot verify --n-states 6
+qpot ui --port 8509
+```
+
+Abre `http://localhost:8509`. El comando `demo install` copia el caso versionado a un
+proyecto independiente dentro de `workspace/`; no modifica los archivos de `examples/`.
+Si el proyecto ya fue instalado, usa `qpot project open demo-tres-picos` en vez de instalarlo
+de nuevo.
+
 ## Flujo recomendado
 
 ```bash
@@ -176,6 +195,10 @@ paramétrico y comparación real con COMSOL 5.6. El error máximo Python–COMSO
 
 Los archivos de trabajo y los `.mph` permanecen fuera de Git. En `examples/` solo se versiona
 la evidencia compacta necesaria para entender y reproducir el caso.
+
+La presentación breve para la defensa está en
+[`docs/Quantum_Potential_AI_Defensa_1.0.pptx`](docs/Quantum_Potential_AI_Defensa_1.0.pptx) y
+el guion de prueba en [`GUIA_PRESENTACION_PROFESOR.md`](GUIA_PRESENTACION_PROFESOR.md).
 
 ## Calidad
 

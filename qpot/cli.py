@@ -454,6 +454,22 @@ def cmd_project_export(args) -> int:
     return 0
 
 
+def cmd_demo_install(args) -> int:
+    demos = {
+        "tres-picos": (
+            Path(__file__).resolve().parents[1]
+            / "examples" / "punto_cuantico_3_picos_1_pozo"
+        ),
+    }
+    project_name = args.name or f"demo-{args.demo}"
+    path = projects.install_demo(demos[args.demo], project_name)
+    _ok(
+        f"Demo '{args.demo}' instalado y activado: {path}\n"
+        "Siguiente paso: qpot verify --n-states 6"
+    )
+    return 0
+
+
 def cmd_comsol_remote(args) -> int:
     from . import comsol_remote
     result = comsol_remote.certify(session.design_path(), args.out)
@@ -665,6 +681,13 @@ def build_parser() -> argparse.ArgumentParser:
     pp.add_argument("name")
     pp.add_argument("--out", default=None)
     pp.set_defaults(func=cmd_project_export)
+
+    sp = sub.add_parser("demo", help="Instalar un caso demostrativo reproducible")
+    demo_sub = sp.add_subparsers(dest="demo_cmd", required=True)
+    dp = demo_sub.add_parser("install", help="Copiar un demo al workspace y activarlo")
+    dp.add_argument("demo", choices=("tres-picos",))
+    dp.add_argument("--name", default=None, help="Nombre opcional del proyecto de destino")
+    dp.set_defaults(func=cmd_demo_install)
 
     sp = sub.add_parser("comsol-remote-validate",
                         help="Certificar el Design activo en COMSOL 5.6 por SSH")

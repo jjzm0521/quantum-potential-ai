@@ -87,6 +87,38 @@ def create_project(name: str, *, dim: int, material: str, activate: bool = True)
     return path
 
 
+def install_demo(source: str | Path, name: str) -> Path:
+    """Instala un ejemplo versionado como proyecto independiente y activo."""
+    src = Path(source)
+    required = ("design.json", "target.json", "agent_assessment.json")
+    missing = [filename for filename in required if not (src / filename).is_file()]
+    if missing:
+        raise FileNotFoundError(
+            f"El demo en {src} está incompleto; faltan: {', '.join(missing)}"
+        )
+    slug = slugify(name)
+    dst = _project_dir(slug)
+    if dst.exists():
+        raise FileExistsError(
+            f"El proyecto '{slug}' ya existe. Usa otro nombre o ábrelo con "
+            f"`qpot project open {slug}`."
+        )
+    for sub in ("history", "runs", "exports"):
+        (dst / sub).mkdir(parents=True, exist_ok=True)
+    now = datetime.now(timezone.utc).isoformat()
+    _atomic_json(dst / "project.json", {
+        "schema_version": "1.0", "slug": slug, "name": name,
+        "created_at": now, "updated_at": now, "archived": False,
+        "installed_from": str(src),
+    })
+    for filename in required:
+        shutil.copy2(src / filename, dst / filename)
+    for source_image in sorted(src.glob("source_image.*")):
+        shutil.copy2(source_image, dst / source_image.name)
+        break
+    return set_active(slug)
+
+
 def list_projects() -> list[dict[str, Any]]:
     active = active_slug()
     rows: list[dict[str, Any]] = []
