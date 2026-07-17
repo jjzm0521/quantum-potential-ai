@@ -115,6 +115,18 @@ CPU→GPU puede empeorar los casos docentes pequeños; además, CUDA excluiría 
 Apple Silicon. La ruta prevista es un backend CUDA **opcional y explícito**, con el backend CPU
 como referencia y comparación numérica obligatoria antes de aceptar sus resultados.
 
+## Criterio de complejidad geométrica
+
+`qpot geometry-study` compara simplificaciones contra un Design detallado sin modificar ningún
+proyecto. Controla material, dimensión, área/longitud confinada y relación de aspecto; calcula
+\(E_n\), separaciones, probabilidad dentro del punto y
+\(S_E=|E_n^{cand}-E_n^{ref}|/|E_n^{ref}|\). Reporta por separado si una figura basta para
+niveles individuales o si debe conservarse el detalle para reproducir *splittings*.
+
+El ejemplo [disco–elipse–superelipse](examples/geometry_complexity_study/README.md) demuestra
+el criterio: la elipse reproduce los niveles dentro de 1.12%, pero la superelipse sigue siendo
+necesaria cuando interesan separaciones finas entre estados casi degenerados.
+
 ## COMSOL 5.6
 
 - `recipe`: receta Markdown auditable.

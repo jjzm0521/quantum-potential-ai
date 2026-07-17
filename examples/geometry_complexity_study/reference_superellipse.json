@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "dim": 2,
+  "material": "GaAs",
+  "domain": {"L": 100.0, "N": 72},
+  "parameters": {
+    "a": {"value": 22.0, "unit": "nm", "dtype": "float", "kind": "length", "role": "semieje x"},
+    "b": {"value": 13.0, "unit": "nm", "dtype": "float", "kind": "length", "role": "semieje y"},
+    "n": {"value": 4, "unit": "", "dtype": "int", "kind": "dimensionless", "role": "exponente de forma"},
+    "V0": {"value": -0.2, "unit": "eV", "dtype": "float", "kind": "energy", "role": "profundidad común"}
+  },
+  "pieces": [
+    {
+      "op": "mask",
+      "label": "referencia supereliptica",
+      "region": {"op": "super_ellipse", "args": {"center": [0, 0], "a": "a", "b": "b", "n": "n"}},
+      "value": "V0"
+    }
+  ]
+}

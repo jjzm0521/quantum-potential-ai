@@ -7,4 +7,6 @@ excluidos de Git.
 - [`punto_cuantico_3_picos_1_pozo`](punto_cuantico_3_picos_1_pozo/README.md): imagen AFM
   interpretada como tres picos positivos dentro de un único pozo conectado, con solver,
   barrido paramétrico y validación real en COMSOL 5.6.
+- [`geometry_complexity_study`](geometry_complexity_study/README.md): comparación controlada
+  entre disco, elipse y superelipse para escoger la geometría mínima adecuada.
 - [`ejemplo_python.py`](ejemplo_python.py): uso básico desde Python.

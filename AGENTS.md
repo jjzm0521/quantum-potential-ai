@@ -97,6 +97,7 @@ consultas (`state`, `describe`, `solve`, `verify`, `validate`) imprimen JSON.
 | `solve [--n-states N]` | Resuelve; guarda `wavefunctions.png`, `eigenvalues.csv`, `result.json`. |
 | `verify [--n-states N]` | **El loop**: render + validate + solve + chequeo de zonas solapadas (`zone_overlap`) → reporte objetivo. |
 | `sweep <param> --range=a:b:n [--piece IDX] [--n-states N]` | **Barrido paramétrico** E_n(parámetro), la gráfica clásica de análisis (estilo COMSOL, pero local). Barre un parámetro nombrado o (con `--piece`) un arg de una pieza; guarda `sweep.csv` + `sweep.png`. Usa `--range=-0.5:-0.1:5` (con `=`) para valores negativos. No modifica el Design. |
+| `geometry-study --reference ref.json --candidate nombre=design.json [...]` | Compara geometrías controladas sin modificar Designs: área/longitud, aspecto, E_n, gaps, P_QD y S_E. Distingue si una simplificación sirve para niveles o también para splittings. |
 | `export --format {csv,npz,m,mph,recipe} [--out path] [--n-states N]` | Exporta. |
 
 `set` parsea el valor como JSON si puede: `qpot set 0 value -0.30`, `qpot set 1 sigma 8`,

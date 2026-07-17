@@ -379,6 +379,38 @@ def cmd_export(args) -> int:
     return 0 if path is not None else 1
 
 
+def cmd_geometry_study(args) -> int:
+    """Compare simplifications against a detailed reference without changing the project."""
+    from . import geometry_study
+
+    candidates: list[tuple[str, str]] = []
+    for raw in args.candidate:
+        if "=" not in raw:
+            raise ValueError("--candidate usa ETIQUETA=design.json")
+        label, path = raw.split("=", 1)
+        if not label.strip() or not path.strip():
+            raise ValueError("--candidate requiere etiqueta y ruta no vacías.")
+        candidates.append((label.strip(), path.strip()))
+    report = geometry_study.compare_designs(
+        args.reference,
+        candidates,
+        reference_label=args.reference_label,
+        n_states=args.n_states,
+        tolerance_pct=args.tolerance_pct,
+        measure_tolerance_pct=args.measure_tolerance_pct,
+        aspect_tolerance_pct=args.aspect_tolerance_pct,
+        gap_tolerance_pct=args.gap_tolerance_pct,
+        gap_absolute_tolerance_meV=args.gap_absolute_tolerance_meV,
+        objective=args.objective,
+    )
+    out = Path(args.out) if args.out else session.artifact("geometry_study.json")
+    json_path, png_path = geometry_study.save_study(report, out)
+    output = dict(report)
+    output["artifacts"] = {"json": str(json_path), "png": str(png_path)}
+    _print_json(output)
+    return 0 if all(model["solver_valid"] for model in [report["reference"], *report["candidates"]]) else 1
+
+
 def cmd_migrate(args) -> int:
     raw_path = session.design_path()
     raw = json.loads(raw_path.read_text(encoding="utf-8"))
@@ -579,6 +611,26 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--piece", type=int, default=None, help="Índice de pieza (barre su arg `name`)")
     sp.add_argument("--n-states", type=int, default=4, dest="n_states")
     sp.set_defaults(func=cmd_sweep)
+
+    sp = sub.add_parser(
+        "geometry-study",
+        help="Comparar geometrías simples contra una referencia detallada sin modificar Designs",
+    )
+    sp.add_argument("--reference", required=True, help="Design JSON de referencia detallada")
+    sp.add_argument("--reference-label", default="referencia")
+    sp.add_argument(
+        "--candidate", action="append", required=True,
+        help="ETIQUETA=design.json; repetir para cada simplificación",
+    )
+    sp.add_argument("--n-states", type=int, default=4, dest="n_states")
+    sp.add_argument("--tolerance-pct", type=float, default=3.0)
+    sp.add_argument("--measure-tolerance-pct", type=float, default=5.0)
+    sp.add_argument("--aspect-tolerance-pct", type=float, default=10.0)
+    sp.add_argument("--gap-tolerance-pct", type=float, default=10.0)
+    sp.add_argument("--gap-absolute-tolerance-meV", type=float, default=0.5)
+    sp.add_argument("--objective", choices=("levels", "levels-and-gaps"), default="levels")
+    sp.add_argument("--out", default=None, help="Ruta del reporte JSON; PNG usa el mismo nombre")
+    sp.set_defaults(func=cmd_geometry_study)
 
     sp = sub.add_parser("export", help="Exportar (csv/npz/m/mph/recipe)")
     sp.add_argument("--format", required=True, choices=session.EXPORT_FORMATS)

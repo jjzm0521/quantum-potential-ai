@@ -14,3 +14,5 @@
 - Certificación COMSOL 5.6 completa: 11/11 casos obligatorios aprobados.
 - Partición atómica de dominios para booleanas y `where`, sin cobertura omitida o duplicada.
 - Superelipses, epicicloides e hipocicloides como polígonos paramétricos cerrados y barribles.
+- Estudio de complejidad geométrica simple–detallada con área, aspecto, niveles, separaciones,
+  probabilidad confinada y sensibilidad porcentual, sin mutar los Designs comparados.
