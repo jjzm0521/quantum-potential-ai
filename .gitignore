@@ -26,6 +26,7 @@ runs/
 
 # Sesión de trabajo del CLI qpot (Design + renders + resultados)
 session/
+workspace/
 
 # Outputs generados
 *.mph
@@ -33,6 +34,7 @@ session/
 *.csv
 outputs/
 exports/
+remote-comsol-results/
 
 # IDE
 .vscode/

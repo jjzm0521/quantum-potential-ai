@@ -12,11 +12,12 @@ La referencia de primitivas y el esquema del Design están en [PRIMITIVES.md](PR
 
 Arranque típico:
 ```
-python -m qpot new --dim 1 --material GaAs
-python -m qpot from-preset finite_well --dim 1 --params "{\"depth\":0.25,\"L\":30}"
-python -m qpot verify   # renderiza session/render.png — ÁBRELO y míralo
+qpot project new demo --dim 1 --material GaAs
+qpot from-preset finite_well --dim 1 --params "{\"depth\":0.25,\"L\":30}"
+qpot target --description "Pozo finito de 30 nm y 250 meV"
+qpot verify   # renderiza el proyecto activo — ÁBRELO y míralo
 ```
 
-El Design vive en `session/design.json` (fuente de verdad). Para ver el potencial:
-`python -m qpot render --html --open` (superficie 3D interactiva, sin servidor).
+El Design vive en el proyecto activo de `workspace/` (fuente de verdad). Para verlo:
+`qpot render --html --open` (superficie 3D interactiva, sin servidor).
 En Claude Code puedes lanzar el flujo completo con el comando `/potential`.

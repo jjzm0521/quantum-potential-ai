@@ -129,15 +129,15 @@ Un `.mph` es un ZIP; abre `dmodel.xml` y comprueba:
 Comprobación rápida en Python:
 ```python
 import zipfile, re
-data = zipfile.ZipFile("session/model.mph").read("dmodel.xml").decode("utf-8","replace")
+data = zipfile.ZipFile("model.mph").read("dmodel.xml").decode("utf-8","replace")
 print("schr:", "SchrodingerEquation" in data)
 for m in re.finditer(r'op="ElectronPotentialEnergy" tag="([^"]+)".*?<entityFlags[^>]*>([^<]*)<', data, re.DOTALL):
     print(m.group(1), m.group(2))   # ve1 debe decir DISABLED; los demás activos
 ```
 
-**Test automático de regresión** (no necesita COMSOL): `python test_mph.py`. Verifica que el
-reparto región/complemento sea disjunto y completo, detecta zonas solapadas, y de paso revisa
-tu `session/design.json` actual avisando si alguna zona se solapa. Córrelo después de tocar
+**Test automático de regresión** (no necesita COMSOL): `pytest tests/test_comsol_guards.py`.
+Verifica que el
+reparto región/complemento sea disjunto y completo y detecta zonas solapadas. Córrelo después de tocar
 `core/exporter_mph.py` o `core/comsol_export.py`.
 
 ---
@@ -145,9 +145,9 @@ tu `session/design.json` actual avisando si alguna zona se solapa. Córrelo desp
 ## 6. Cómo se genera (flujo del usuario, sin MATLAB)
 
 ```
-python -m qpot export --format mph     # → session/model.mph (abre directo en COMSOL)
+qpot export --format mph     # → proyecto activo/model.mph (abre directo en COMSOL)
 ```
 - En 2D usa `core.exporter_mph.export_mph_geometry` (geometría + schr, este documento).
-- Si no hay MPh, cae con gracia a la **receta** (`comsol_recipe.md`), que reproduce estos mismos
-  pasos a mano.
+- Si no hay MPh o una geometría no es estrictamente traducible, el comando **falla sin crear
+  un sustituto engañoso**. Usa `--allow-fallback` para pedir explícitamente la receta.
 - La receta y el `.m` (`--format recipe` / `--format m`) siguen las **mismas** reglas.

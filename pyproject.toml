@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quantum-potential-ai"
+version = "1.0.0"
+description = "Diseño paramétrico, verificación y exportación COMSOL de potenciales cuánticos 1D/2D"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+authors = [{name = "Quantum Potential AI contributors"}]
+dependencies = [
+  "numpy>=1.26", "scipy>=1.12", "matplotlib>=3.8", "plotly>=5.20",
+  "streamlit>=1.35", "Pillow>=10",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-cov>=5"]
+comsol56 = ["MPh==1.2.3", "jpype1==1.5.2"]
+
+[project.scripts]
+qpot = "qpot.cli:main"
+
+[tool.setuptools]
+packages = ["qpot", "core", "ai"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
