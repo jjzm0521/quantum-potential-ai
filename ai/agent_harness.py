@@ -1,5 +1,5 @@
 """
-Agent harness for external tools and local calculations.
+Compatibility helpers for Design contracts and historical agent tasks.
 
 The harness is intentionally file-based:
   task_dir/request.json        structured input for an agent/tool
@@ -7,8 +7,9 @@ The harness is intentionally file-based:
   task_dir/current_design.json current Design JSON
   task_dir/result.json         expected output from the agent/tool
 
-External command execution is opt-in through environment variables. The UI never
-executes arbitrary text typed by the user.
+Quantum Potential AI 1.0 uses qpot.verification as its only execution pipeline.
+Historical task readers remain so old runs can be inspected, but this module no
+longer launches a second external-agent workflow.
 """
 
 from __future__ import annotations
@@ -360,36 +361,10 @@ def external_execution_enabled() -> bool:
 
 
 def run_agent_tool(tool_name: str, task_id: str) -> AgentRun:
-    """Run a configured external tool. Requires AGENT_HARNESS_ENABLE_RUN=1."""
-    if not external_execution_enabled():
-        raise PermissionError(f"Define {ENABLE_RUN_ENV}=1 para ejecutar herramientas externas.")
-
-    tools = {tool.name: tool for tool in available_agent_tools()}
-    if tool_name not in tools:
-        raise KeyError(f"Herramienta no configurada: {tool_name}")
-
-    tool = tools[tool_name]
-    task_dir = tasks_root() / task_id
-    command = render_command(tool, task_id)
-    timeout = int(os.environ.get(TIMEOUT_ENV, "1800"))
-
-    proc = subprocess.run(
-        command,
-        cwd=str(task_dir),
-        shell=True,
-        text=True,
-        capture_output=True,
-        timeout=timeout,
+    raise RuntimeError(
+        "El launcher externo fue retirado en 1.0. Abre el agente dentro del repositorio "
+        "y usa el CLI qpot; verify/app comparten qpot.verification."
     )
-    run = AgentRun(
-        ok=proc.returncode == 0,
-        returncode=proc.returncode,
-        stdout=proc.stdout,
-        stderr=proc.stderr,
-        command=command,
-    )
-    _write_json(task_dir / f"tool_{tool.name}_last_run.json", run.__dict__)
-    return run
 
 
 def _build_instructions(request: dict[str, Any]) -> str:
@@ -712,10 +687,6 @@ def _main() -> int:
     tools.add_argument("--task-id", default="", help="Also render commands for this task")
     tools.add_argument("--presets", action="store_true", help="Show copyable presets for known tools")
 
-    run = sub.add_parser("run-tool", help="Run a configured external tool")
-    run.add_argument("tool_name")
-    run.add_argument("task_id")
-
     args = parser.parse_args()
 
     if args.cmd == "list":
@@ -746,11 +717,6 @@ def _main() -> int:
             rows.append({"presets": agent_tool_presets()})
         print(json.dumps(rows, ensure_ascii=False, indent=2))
         return 0
-
-    if args.cmd == "run-tool":
-        run_result = run_agent_tool(args.tool_name, args.task_id)
-        print(json.dumps(run_result.__dict__, ensure_ascii=False, indent=2))
-        return 0 if run_result.ok else run_result.returncode
 
     return 2
 

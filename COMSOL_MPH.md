@@ -46,25 +46,34 @@ propio Java:
 
 1. **Parámetros globales** (`model.parameter(nombre, expr)`): `m_eff`, `Ldom`, y todos los del
    bloque `parameters` con unidad (`R1 = 16[nm]`, `Vb = 0.27[eV]`, `n = 7`).
+   Nunca definas un parámetro llamado `eV`: ocultaría la unidad incorporada `[eV]` y aplicaría
+   dos veces la conversión a joules.
 2. **Geometría 2D** (`model.create('geometries/geom1', 2)`):
    - `Square` dominio: `.property('size','Ldom')`, `.property('base','center')`.
    - Cada región como entidad:
      - `Circle`: `.property('r', R)`, `.property('pos',[cx,cy])`, `.property('base','center')`.
      - `Ellipse`: `.property('semiaxes',[a,b])`, `pos`, `base`.
      - `Rectangle`: `.property('size',[Lx,Ly])`, `pos`, `base`.
-     - `ParametricCurve` (epicicloide/hipocicloide/súper-elipse/rosa):
-       `.property('parname','s')`, `.property('parmax','2*pi')`,
-       `.property('coord',[x_expr, y_expr])` — las expresiones usan los **parámetros** (R2, n…).
+     - `Polygon` paramétrico (epicicloide/hipocicloide/súper-elipse): arrays cerrados de
+       vértices simbólicos que conservan **R, a, b y n**. `ParametricCurve` no divide el
+       cuadrado en dominios sólidos de forma fiable en COMSOL 5.6.
    - `geom.run()` ⟵ esto hace **Formar unión** (genera los dominios).
-3. **Física = interfaz dedicada** `model.create('physics/schr','SchrodingerEquation','geom1')`:
-   - **Masa efectiva**: `phys.java.feature('meff1').set('meff', 'm_eff')`.
+3. **Física = interfaz dedicada**
+   `model.create('physics/schr','SchrodingerEquation', geom.tag(), [['psi']])`: MPh/JPype
+   necesita tanto el tag de geometría como la matriz de variables dependientes
+   (`new String[][]{{"psi"}}`). Omitir la matriz selecciona una sobrecarga distinta y termina
+   creando `CoefficientFormPDE` con MPh 1.2.3.
+   - **Masa efectiva**: `meffe_psi_src='userdef'` y
+     `meffe_psi='m_eff*me_const'`.
    - **Deshabilitar el potencial por defecto**: `phys.java.feature('ve1').active(False)`.
    - **Energía potencial por dominio** (ver §3): nodos `ElectronPotentialEnergy` con
      `Ve_src='userdef'` y `Ve=<expr>`.
    - Flujo cero (`zf1`) y Valores iniciales (`init1`) quedan por defecto.
-4. **Malla**: `model.create('meshes/mesh1','geom1')`, `autoMeshSize(3)`, `run`.
+4. **Malla**: `model.create('meshes/mesh1','geom1')`, `autoMeshSize(1)`, `run`.
 5. **Estudio de valor propio**: `study.create('Eigenvalue', name='eigv')`,
-   `.property('neigs', N)`, `.java.set('shift','0')`, `.java.set('eigref','0.1')`.
+   `.property('neigs', N)`, y `shift=min(V)` en eV para obtener los niveles ligados más
+   bajos (usar cero en pozos negativos devuelve estados del continuo cercanos a cero).
+   COMSOL 5.6 no reconoce `eigref` en este feature; no debe emitirse.
 6. **Guardar**: `model.save(path)`; luego `client.disconnect()` **envuelto en try/except**
    (en modo stand-alone lanza "client not connected" PERO el `.mph` ya quedó guardado).
 
@@ -80,8 +89,9 @@ Procedimiento correcto:
 1. **Deshabilita `ve1`** (el default armónico). Sin esto, nada más importa.
 2. **Calcula zonas por puntos interiores reales** (robusto a la numeración de dominios de
    COMSOL, que no se conoce al generar el script):
-   - Evalúa la **máscara** de cada región sobre una grilla.
-   - Por cada **componente conexa**, toma el punto más profundo (máx. `distance_transform_edt`).
+   - Evalúa todas las **regiones atómicas** sobre una grilla y clasifica cada celda por su
+     firma de pertenencia. Así un hueco y el exterior siguen siendo dominios distintos.
+   - Por cada **componente conexa de la partición atómica**, toma el punto más profundo.
    - Crea una **Ball selection** de dominios en ese punto:
      `entitydim = JInt(2)`, `posx/posy = '<x>[nm]'`, `r = '0.5[nm]'`, `condition = 'intersects'`.
    - Si una zona tiene varias componentes → varias Balls + una **Union selection**.
@@ -89,8 +99,8 @@ Procedimiento correcto:
    - `where(region, inner, outer)` → **dos** nodos disjuntos: `región` = `inner`, y
      **complemento de la región** = `outer`. (Corona: canal = inner; las dos barreras = outer.)
    - `mask(region, value)` → `región` = `value`; complemento = `0`.
-   - Varias regiones → base en todo + overrides (COMSOL resuelve por **exclusividad**: el nodo
-     posterior se queda con sus dominios), con el default igualmente deshabilitado.
+   - Varias regiones → cada región recibe su nodo y la base se asigna **solo al complemento
+     de la unión**. Los nodos son acumulativos; una base global solapada alteraría `Ve`.
    - Sin regiones (perfil analítico, p. ej. `raw_expr`) → un nodo con `Ve` = la expresión.
 4. **Asignar la selección**: `ve.java.selection().named(<TAG REAL>)`. El tag real se obtiene con
    `nodo.java.tag()`, **no** con el nombre del path que pusiste al crear (ese no es el tag).
@@ -108,7 +118,7 @@ Procedimiento correcto:
 - El renglón rojo *"The client is not connected to a server"* al FINAL es ruido del cierre del
   JVM, **no** un fallo (si antes salió "guardado en …").
 - Crea las features con su tipo COMSOL exacto: `SchrodingerEquation`, `EffectiveMass` (`meff1`),
-  `ElectronPotentialEnergy` (props `Ve_src`, `Ve`), `Square`/`Circle`/`Ellipse`/`ParametricCurve`,
+  `ElectronPotentialEnergy` (props `Ve_src`, `Ve`), `Square`/`Circle`/`Ellipse`/`Polygon`,
   `Eigenvalue`. (Identificadores tomados de un `.mph` real de COMSOL 5.6.)
 
 ---
@@ -118,7 +128,7 @@ Procedimiento correcto:
 Un `.mph` es un ZIP; abre `dmodel.xml` y comprueba:
 
 - [ ] `op="SchrodingerEquation"` presente (no `CoefficientFormPDE`).
-- [ ] `ParametricCurve` con las expresiones x(s), y(s) en parámetros (R2, n…).
+- [ ] `Polygon` cicloidal/superelíptico con vértices simbólicos en parámetros (R2, n, a, b…).
 - [ ] El nodo `ElectronPotentialEnergy` por defecto (`ve1`) tiene `entityFlags` con **`DISABLED`**.
 - [ ] Hay **un nodo de potencial por zona**, con `Ve_src='userdef'` y el `Ve` correcto
       (p. ej. canal `0[eV]`, barreras `Vb`), cada uno con su selección (`Ball`/`Union`).
@@ -129,15 +139,15 @@ Un `.mph` es un ZIP; abre `dmodel.xml` y comprueba:
 Comprobación rápida en Python:
 ```python
 import zipfile, re
-data = zipfile.ZipFile("session/model.mph").read("dmodel.xml").decode("utf-8","replace")
+data = zipfile.ZipFile("model.mph").read("dmodel.xml").decode("utf-8","replace")
 print("schr:", "SchrodingerEquation" in data)
 for m in re.finditer(r'op="ElectronPotentialEnergy" tag="([^"]+)".*?<entityFlags[^>]*>([^<]*)<', data, re.DOTALL):
     print(m.group(1), m.group(2))   # ve1 debe decir DISABLED; los demás activos
 ```
 
-**Test automático de regresión** (no necesita COMSOL): `python test_mph.py`. Verifica que el
-reparto región/complemento sea disjunto y completo, detecta zonas solapadas, y de paso revisa
-tu `session/design.json` actual avisando si alguna zona se solapa. Córrelo después de tocar
+**Test automático de regresión** (no necesita COMSOL): `pytest tests/test_comsol_guards.py`.
+Verifica que el
+reparto región/complemento sea disjunto y completo y detecta zonas solapadas. Córrelo después de tocar
 `core/exporter_mph.py` o `core/comsol_export.py`.
 
 ---
@@ -145,9 +155,9 @@ tu `session/design.json` actual avisando si alguna zona se solapa. Córrelo desp
 ## 6. Cómo se genera (flujo del usuario, sin MATLAB)
 
 ```
-python -m qpot export --format mph     # → session/model.mph (abre directo en COMSOL)
+qpot export --format mph     # → proyecto activo/model.mph (abre directo en COMSOL)
 ```
 - En 2D usa `core.exporter_mph.export_mph_geometry` (geometría + schr, este documento).
-- Si no hay MPh, cae con gracia a la **receta** (`comsol_recipe.md`), que reproduce estos mismos
-  pasos a mano.
+- Si no hay MPh o una geometría no es estrictamente traducible, el comando **falla sin crear
+  un sustituto engañoso**. Usa `--allow-fallback` para pedir explícitamente la receta.
 - La receta y el `.m` (`--format recipe` / `--format m`) siguen las **mismas** reglas.

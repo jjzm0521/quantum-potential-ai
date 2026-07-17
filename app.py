@@ -22,7 +22,8 @@ import streamlit as st
 from core.materials import list_materials
 from core.potentials import POTENTIALS
 from core.potentials_1d import POTENTIALS_1D
-from qpot import render, session
+from qpot import render, session, projects, verification
+from qpot.schema import normalize_parameter, set_parameter
 
 
 st.set_page_config(
@@ -106,10 +107,44 @@ def plot_potential(field: dict[str, Any], mode: str) -> go.Figure:
     x = field["x_nm"]
     y = field["y_nm"]
     v_mev = field["V_eV"] * 1000.0
+
+    if mode in {"Topografía inferida", "Topografía 3D", "Topografía superior"}:
+        # AFM brightness/height and electron potential need not have the same
+        # sign.  For the presentation workflow we expose the explicitly
+        # declared assumption that a taller dot gives deeper confinement.
+        height = -v_mev
+        height = height - float(np.nanmin(height))
+        scale = float(np.nanmax(height))
+        if scale > 0:
+            height = height / scale
+        if mode == "Topografía superior":
+            fig = go.Figure(go.Heatmap(
+                x=x, y=y, z=height, colorscale="Hot",
+                colorbar=dict(title="altura<br>relativa"),
+            ))
+            fig.update_yaxes(scaleanchor="x", scaleratio=1)
+            title = "Topografía inferida: claro = alto, oscuro = depresión"
+        else:
+            fig = go.Figure(go.Surface(
+                x=x, y=y, z=height, colorscale="Hot",
+                colorbar=dict(title="altura<br>relativa"),
+            ))
+            fig.update_layout(scene=dict(
+                xaxis_title="x (nm)", yaxis_title="y (nm)",
+                zaxis_title="altura relativa",
+                camera=dict(eye=dict(x=1.45, y=-1.55, z=1.05)),
+            ))
+            title = "Topografía inferida: protuberancia central y depresión envolvente"
+        fig.update_layout(
+            height=560, margin=dict(l=8, r=8, t=36, b=8),
+            template="plotly_white", title=title,
+        )
+        return fig
+
     cmin, cmax = render._clip_range(v_mev)
     v_plot = np.clip(v_mev, cmin, cmax) if cmin is not None else v_mev
 
-    if mode == "Vista superior":
+    if mode in {"Vista superior", "Potencial superior"}:
         fig = go.Figure(
             go.Heatmap(
                 x=x,
@@ -317,18 +352,41 @@ def preset_form(dim: int) -> tuple[str, dict[str, Any]]:
 
 def render_sidebar(design: dict[str, Any] | None) -> bool:
     with st.sidebar:
-        st.header("Sesion")
+        st.header("Proyecto")
+        available = projects.list_projects()
+        if available:
+            names = [p["slug"] for p in available]
+            active = projects.active_slug()
+            selected = st.selectbox("Proyecto activo", names,
+                                    index=names.index(active) if active in names else 0)
+            if selected != active:
+                projects.set_active(selected)
+                st.rerun()
+        with st.expander("Nuevo proyecto"):
+            project_name = st.text_input("Nombre", key="new_project_name")
+            project_dim = st.radio("Dimensión inicial", [1, 2], horizontal=True,
+                                   key="new_project_dim")
+            if st.button("Crear proyecto", disabled=not bool(project_name.strip())):
+                projects.create_project(project_name, dim=project_dim, material="GaAs", activate=True)
+                st.rerun()
         st.caption("Carpeta compartida por la app, el CLI y el agente.")
         st.code(str(session.session_dir()), language=None)
-        live = st.toggle("Vista en vivo", help="Relee session/design.json cada 2 segundos.")
+        live = st.toggle("Vista en vivo", help="Relee design.json cada 2 segundos.")
 
         st.divider()
         st.subheader("Pedido al agente")
         st.caption("Usa esto como puente tipo Text2CAD: describes el potencial y el agente modifica la misma sesion.")
+        target_path = session.artifact("target.json")
+        try:
+            target_data = json.loads(target_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            target_data = {"description": "", "features": {}, "tolerances": {}}
+        project_key = projects.active_slug() or "session"
         goal = st.text_area(
             "Objetivo",
-            value="Construye un anillo cuantico de GaAs, radio 45 nm y profundidad 300 meV.",
+            value=target_data.get("description", ""),
             height=90,
+            key=f"agent_goal_{project_key}",
         )
         if design is not None:
             dim = int(design.get("dim", 2))
@@ -341,9 +399,29 @@ def render_sidebar(design: dict[str, Any] | None) -> bool:
             f"{goal}\n\n"
             "Luego verifica con:\n"
             f"python -m qpot verify --n-states 6\n\n"
-            "La app se actualiza desde session/design.json.",
+            "La app se actualiza desde el proyecto activo.",
             language="text",
         )
+        with st.expander("Objetivo verificable"):
+            target_description = st.text_area("Descripción del objetivo",
+                                              value=target_data.get("description", ""),
+                                              key=f"target_description_{project_key}")
+            target_features = st.text_area("Features esperadas (JSON)",
+                                           value=json.dumps(target_data.get("features", {}), ensure_ascii=False),
+                                           key=f"target_features_{project_key}")
+            target_tolerances = st.text_area("Tolerancias (JSON)",
+                                             value=json.dumps(target_data.get("tolerances", {}), ensure_ascii=False),
+                                             key=f"target_tolerances_{project_key}")
+            if st.button("Guardar objetivo"):
+                try:
+                    projects._atomic_json(target_path, {
+                        "description": target_description,
+                        "features": json.loads(target_features),
+                        "tolerances": json.loads(target_tolerances),
+                    })
+                    st.success("Objetivo guardado.")
+                except json.JSONDecodeError as exc:
+                    st.error(f"JSON inválido: {exc}")
 
         st.divider()
         st.subheader("Crear o reemplazar")
@@ -387,6 +465,10 @@ def render_sidebar(design: dict[str, Any] | None) -> bool:
                 p = session.artifact(name)
                 if p.exists():
                     st.caption(str(p))
+            history = sorted(session.artifact("history").glob("*.json"), reverse=True)
+            st.caption(f"Revisiones guardadas: {len(history)}")
+            for revision in history[:5]:
+                st.caption(revision.name)
         return live
 
 
@@ -475,11 +557,18 @@ with left:
         params = design.setdefault("parameters", {})
         for pname in list(params.keys()):
             pc1, pc2 = st.columns([4, 1])
-            cur = params[pname]
-            if isinstance(cur, int) and not isinstance(cur, bool):
-                params[pname] = int(pc1.number_input(pname, value=int(cur), step=1, key=f"par_{pname}"))
+            record = normalize_parameter(pname, params[pname])
+            cur = record["value"]
+            label = f"{pname} ({record.get('unit') or 'adim.'})"
+            if record["dtype"] == "int":
+                value = int(pc1.number_input(label, value=int(cur), step=1,
+                                             min_value=record.get("min"), max_value=record.get("max"),
+                                             key=f"par_{pname}"))
             else:
-                params[pname] = float(pc1.number_input(pname, value=float(cur), format="%.6f", key=f"par_{pname}"))
+                value = float(pc1.number_input(label, value=float(cur), format="%.6f",
+                                               min_value=record.get("min"), max_value=record.get("max"),
+                                               key=f"par_{pname}"))
+            set_parameter(design, pname, value)
             if pc2.button("\U0001F5D1", key=f"delpar_{pname}", help="Eliminar parametro"):
                 params.pop(pname, None)
                 save_and_rerun(design)
@@ -489,7 +578,7 @@ with left:
         new_val = nc2.number_input("valor", key="par_new_val", value=0.0, format="%.6f",
                                    label_visibility="collapsed")
         if nc3.button("+", key="par_add", help="Agregar parametro") and new_name:
-            params[new_name] = new_val
+            set_parameter(design, new_name, new_val)
             save_and_rerun(design)
 
     pieces = design.setdefault("pieces", [])
@@ -542,7 +631,12 @@ with right:
     st.subheader("Visualizacion")
     view_mode = "Curva 1D"
     if dim == 2:
-        view_mode = st.radio("Modo", ["Superficie 3D", "Vista superior"], horizontal=True)
+        view_mode = st.radio(
+            "Modo",
+            ["Potencial 3D", "Potencial superior"],
+            horizontal=True,
+            key="view_mode_potential_direct_v3",
+        )
     try:
         field = session.evaluate_potential(design)
         rng = session._range_summary(field["V_eV"])
@@ -550,6 +644,9 @@ with right:
         metrics[0].metric("V min", f"{rng['min'] * 1000:.2f} meV")
         metrics[1].metric("V max", f"{rng['max'] * 1000:.2f} meV")
         metrics[2].metric("Piezas", len(pieces))
+        st.caption(
+            "Se muestra V directamente: amarillo = pico positivo; morado = pozo negativo."
+        )
         st.plotly_chart(plot_potential(field, view_mode), width="stretch")
     except Exception as exc:  # noqa: BLE001
         st.error(f"No se pudo evaluar el potencial: {exc}")
@@ -563,14 +660,15 @@ with right:
     actions = st.columns(3)
     if actions[0].button("Verificar", type="primary"):
         session.save_design(design)
-        with st.spinner("Renderizando, validando y resolviendo..."):
-            result, summary = session.solve_design(design, n_states=n_states)
-            render.render_potential(session.evaluate_potential(design), session.artifact("render.png"))
-            render.render_wavefunctions(result, dim, session.artifact("wavefunctions.png"), n_show=min(4, n_states))
-            session.artifact("result.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
-        st.session_state["last_result"] = result
-        st.session_state["last_summary"] = summary
-        st.success("Verificacion completada.")
+        with st.spinner("Validando diseño, solver, malla, dominio y COMSOL..."):
+            report = verification.verify_design(design, n_states=n_states, persist=True)
+        st.session_state["last_verification"] = report
+        if report["ready_to_export"]:
+            st.success("Verificación completa: listo para exportar.")
+        elif report["solver_valid"]:
+            st.warning("Solver válido; falta objetivo/evaluación visual o preparación COMSOL.")
+        else:
+            st.error("La verificación científica requiere correcciones.")
 
     if actions[1].button("Resolver"):
         session.save_design(design)
@@ -588,6 +686,25 @@ with right:
 
     result = st.session_state.get("last_result")
     summary = st.session_state.get("last_summary")
+    verified = st.session_state.get("last_verification")
+    if verified:
+        st.subheader("Estado de verificación")
+        cols = st.columns(4)
+        cols[0].metric("Design", "OK" if verified["design_valid"] else "Revisar")
+        cols[1].metric("Solver", "OK" if verified["solver_valid"] else "Revisar")
+        cols[2].metric("COMSOL", "OK" if verified["comsol_ready"] else "Bloqueado")
+        cols[3].metric("Objetivo", "OK" if verified["target_match"]["ok"] else "Pendiente")
+        s = verified.get("solver", {})
+        if s.get("solver_completed"):
+            st.caption(
+                f"Malla: {'OK' if s.get('grid_convergence_ok') else 'revisar'} · "
+                f"Dominio: {'OK' if s.get('domain_convergence_ok') else 'revisar'} · "
+                f"Fuga de borde: {'OK' if s.get('boundary_leakage_ok') else 'revisar'} · "
+                f"Estados ligados: {s.get('n_bound_states')} bajo {s.get('escape_threshold_meV')} meV"
+            )
+        wf = session.artifact("wavefunctions.png")
+        if wf.exists():
+            st.image(str(wf), caption="Funciones de onda verificadas", width="stretch")
     if result is not None and summary is not None:
         st.subheader("Solver")
         e_cols = st.columns(min(4, len(summary["energies_meV"])))

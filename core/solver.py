@@ -18,12 +18,76 @@ import numpy as np
 from scipy.sparse import diags, kron, eye
 from scipy.sparse.linalg import eigsh
 from dataclasses import dataclass
+from functools import lru_cache
 
 # Constantes
 HBAR  = 1.054571817e-34   # J·s
 M_E   = 9.10938e-31        # kg
 EV    = 1.60218e-19        # J/eV
 NM    = 1e-9               # m/nm
+
+
+def lowest_eigsh(H, k: int, v_min_J: float):
+    """Eigenvalores más bajos de H, robusto ante espectros muy anchos.
+
+    Potenciales con paredes repulsivas (Morse, triangular, r^4) tienen V_max
+    enorme y `eigsh(which="SA")` puede no converger (ARPACK -1). El modo
+    shift-invert (sigma cerca del fondo del pozo) converge rápido en esos casos;
+    lo usamos como fallback para no pagar la factorización LU cuando no hace falta.
+    """
+    from scipy.sparse.linalg import ArpackNoConvergence
+    n = H.shape[0]
+    # A wider Krylov subspace is important for symmetric 2D potentials: with
+    # ARPACK's small default subspace, one member of a degenerate pair can be
+    # replaced by a higher state at the requested boundary.  A fixed starting
+    # vector also makes repeated verification runs reproducible.
+    ncv = min(n - 1, max(4 * k + 1, 32))
+    indices = np.arange(1, n + 1, dtype=float)
+    v0 = np.sin(indices * 0.754877666) + np.cos(indices * 0.569840291)
+    try:
+        return eigsh(H, k=k, which="SA", ncv=ncv, v0=v0)
+    except ArpackNoConvergence:
+        sigma = v_min_J - abs(v_min_J) * 1e-3 - 1e-25
+        return eigsh(H, k=k, sigma=sigma, which="LM", ncv=ncv, v0=v0)
+
+
+def _work_state_count(requested: int, dimension: int) -> int:
+    """Compute extra Ritz pairs so a degeneracy at the request boundary is not missed."""
+    requested = min(max(1, int(requested)), dimension - 2)
+    # ARPACK starts from a single vector.  On highly symmetric grids that
+    # vector can have almost no projection on one symmetry sector, so a small
+    # oversampling still misses one member of a degenerate pair.  Eight spare
+    # Ritz pairs proved sufficient for the disk/ring regression matrix while
+    # remaining tiny compared with the N² Hamiltonian.
+    extra = max(8, requested)
+    return min(requested + extra, dimension - 2)
+
+
+@lru_cache(maxsize=4)
+def _kinetic_2d_cached(
+    Nx: int,
+    Ny: int,
+    dx_nm: float,
+    dy_nm: float,
+    m_eff: float,
+):
+    """Reusable sparse kinetic operator; sweeps only rebuild the potential diagonal."""
+    dx = dx_nm * NM
+    dy = dy_nm * NM
+    hbar2_2m = HBAR**2 / (2 * m_eff * M_E)
+
+    def kinetic_1d(size, spacing):
+        return (-hbar2_2m / spacing**2) * diags(
+            [np.ones(size - 1), -2 * np.ones(size), np.ones(size - 1)],
+            [-1, 0, 1], shape=(size, size), format="csr",
+        )
+
+    Tx = kinetic_1d(Nx, dx)
+    Ty = kinetic_1d(Ny, dy)
+    return (
+        kron(Ty, eye(Nx, format="csr"), format="csr")
+        + kron(eye(Ny, format="csr"), Tx, format="csr")
+    )
 
 
 @dataclass
@@ -35,6 +99,13 @@ class SolverResult:
     V_eV: np.ndarray              # potencial evaluado
     convergence_ok: bool
     grid_size: tuple[int, int]
+    residuals: np.ndarray
+    orthogonality_error: float
+    normalization_errors: np.ndarray
+    boundary_probabilities: np.ndarray
+    backend: str
+    requested_states: int
+    computed_states: int
 
 
 def solve(
@@ -54,29 +125,9 @@ def solve(
     dx_nm = x_nm[1] - x_nm[0]
     dy_nm = y_nm[1] - y_nm[0]
 
-    # Convertir a SI
-    dx = dx_nm * NM
-    dy = dy_nm * NM
-    m  = m_eff * M_E
-
-    # Prefactor cinético en Joules: ℏ²/(2m)
-    hbar2_2m = HBAR**2 / (2 * m)
-
-    # Operador cinético 1D (diferencias finitas centradas)
-    def kinetic_1d(N, dq):
-        diag_main = -2 * np.ones(N)
-        diag_off  = np.ones(N - 1)
-        T = diags([diag_off, diag_main, diag_off], [-1, 0, 1],
-                  shape=(N, N), format="csr")
-        return (-hbar2_2m / dq**2) * T   # en Joules
-
-    Tx = kinetic_1d(Nx, dx)
-    Ty = kinetic_1d(Ny, dy)
-    Ix = eye(Nx, format="csr")
-    Iy = eye(Ny, format="csr")
-
-    # Hamiltoniano cinético 2D: T = Ty⊗Ix + Iy⊗Tx
-    H_kin = kron(Ty, Ix, format="csr") + kron(Iy, Tx, format="csr")
+    H_kin = _kinetic_2d_cached(
+        Nx, Ny, round(float(dx_nm), 14), round(float(dy_nm), 14), round(float(m_eff), 14)
+    )
 
     # Potencial como diagonal (Joules)
     V_flat = V_eV.flatten() * EV
@@ -86,26 +137,49 @@ def solve(
 
     # Resolver n_states eigenvalores más bajos
     n_req = min(n_states, Nx * Ny - 2)
-    eigenvalues, eigenvectors = eigsh(H, k=n_req, which="SA")
+    n_work = _work_state_count(n_req, Nx * Ny)
+    eigenvalues, eigenvectors = lowest_eigsh(H, n_work, float(V_flat.min()))
 
     # Ordenar por energía
     idx = np.argsort(eigenvalues)
     eigenvalues  = eigenvalues[idx]
     eigenvectors = eigenvectors[:, idx]
+    eigenvalues = eigenvalues[:n_req]
+    eigenvectors = eigenvectors[:, :n_req]
+
+    residuals = []
+    h_scale = max(float(np.max(np.abs(H.diagonal()))), 1e-30)
+    for i in range(n_req):
+        vec = eigenvectors[:, i]
+        hv = H @ vec
+        residuals.append(float(np.linalg.norm(hv - eigenvalues[i] * vec) / h_scale))
+    gram = eigenvectors.conj().T @ eigenvectors
+    orthogonality_error = float(np.max(np.abs(gram - np.eye(n_req))))
 
     # Normalizar |ψ|² sobre la grilla (integral ≈ 1)
     dA = dx_nm * dy_nm  # nm²
     wavefunctions = []
+    normalization_errors = []
+    boundary_probabilities = []
+    band = max(1, int(np.ceil(0.05 * min(Nx, Ny))))
     for i in range(n_req):
         psi = eigenvectors[:, i].reshape(Ny, Nx)
         norm = np.sum(np.abs(psi)**2) * dA
         psi /= np.sqrt(norm)
-        wavefunctions.append(np.abs(psi)**2)
+        density = np.abs(psi)**2
+        normalization_errors.append(float(abs(np.sum(density) * dA - 1.0)))
+        boundary = np.zeros((Ny, Nx), dtype=bool)
+        boundary[:band, :] = True
+        boundary[-band:, :] = True
+        boundary[:, :band] = True
+        boundary[:, -band:] = True
+        boundary_probabilities.append(float(np.sum(density[boundary]) * dA))
+        wavefunctions.append(density)
 
     energies_meV = eigenvalues / EV * 1000   # J → eV → meV
 
     # Chequeo básico de convergencia: todos los eigenvalores deben ser reales
-    convergence_ok = bool(np.all(np.isfinite(energies_meV)))
+    convergence_ok = bool(np.all(np.isfinite(energies_meV)) and max(residuals, default=1.0) < 1e-6)
 
     return SolverResult(
         energies_meV=energies_meV,
@@ -115,6 +189,13 @@ def solve(
         V_eV=V_eV,
         convergence_ok=convergence_ok,
         grid_size=(Ny, Nx),
+        residuals=np.asarray(residuals),
+        orthogonality_error=orthogonality_error,
+        normalization_errors=np.asarray(normalization_errors),
+        boundary_probabilities=np.asarray(boundary_probabilities),
+        backend="scipy-arpack-cpu",
+        requested_states=n_req,
+        computed_states=n_work,
     )
 
 

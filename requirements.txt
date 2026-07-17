@@ -4,6 +4,7 @@ scipy>=1.12.0
 matplotlib>=3.8.0     # render PNG (lo que el agente "mira")
 plotly>=5.20.0        # `qpot render --html`: visualización 3D interactiva (sin servidor)
 streamlit>=1.35.0     # visualizador local: parametros, solver, exportacion (sin API)
+Pillow>=10.0.0        # opcional: `qpot analyze-image` con JPG/otros (PNG funciona sin él)
 
 # --- Export .mph nativo a COMSOL (opcional) ---
 # `qpot export --format mph` construye el .mph por geometria + interfaz Schrodinger.

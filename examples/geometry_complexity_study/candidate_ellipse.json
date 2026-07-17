@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "dim": 2,
+  "material": "GaAs",
+  "domain": {"L": 100.0, "N": 72},
+  "parameters": {
+    "a": {"value": 23.9015658467, "unit": "nm", "dtype": "float", "kind": "length", "role": "semieje x ajustado a igual area"},
+    "b": {"value": 14.1236525458, "unit": "nm", "dtype": "float", "kind": "length", "role": "semieje y ajustado a igual area"},
+    "V0": {"value": -0.2, "unit": "eV", "dtype": "float", "kind": "energy", "role": "profundidad común"}
+  },
+  "pieces": [
+    {
+      "op": "mask",
+      "label": "elipse equivalente",
+      "region": {"op": "ellipse", "args": {"center": [0, 0], "a": "a", "b": "b"}},
+      "value": "V0"
+    }
+  ]
+}

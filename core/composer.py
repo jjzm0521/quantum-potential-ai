@@ -37,6 +37,7 @@ from __future__ import annotations
 import copy
 import re
 import numpy as np
+from qpot.schema import parameter_values
 from .primitives import (
     ALL_PRIMITIVES, REGION_PRIMITIVES, PROFILE_PRIMITIVES,
     op_mask, op_where, op_clamp,
@@ -63,7 +64,7 @@ def resolve_params(design: dict) -> dict:
     (string que coincide con una clave de `parameters`), p. ej. `"R":"R2"`, `"value":"Vb"`.
     Para evaluar/resolver se sustituyen; para exportar a COMSOL se conservan los nombres.
     """
-    params = design.get("parameters") or {}
+    params = parameter_values(design)
     if not params:
         return design
 
@@ -224,6 +225,16 @@ def design_to_matlab_expr(design: dict) -> str:
     return " + ".join(terms) if terms else "0"
 
 
+def _matlab_length(value) -> str:
+    """Length expression in SI, preserving COMSOL parameters that already carry units."""
+    return f"({value})" if isinstance(value, str) else f"({value}e-9)"
+
+
+def _matlab_scaled(value, numeric_scale: float) -> str:
+    """Scale legacy unitless numbers, but leave named unit-bearing parameters intact."""
+    return f"({value})" if isinstance(value, str) else f"({value}*{numeric_scale:g})"
+
+
 def _piece_to_matlab(piece: dict, params: dict | None = None) -> str:
     op = piece.get("op")
 
@@ -241,27 +252,28 @@ def _piece_to_matlab(piece: dict, params: dict | None = None) -> str:
         c = piece["args"]["center"]
         amp = piece["args"]["amplitude"]
         sig = piece["args"]["sigma"]
-        return (f"({amp})*exp(-((x-({c[0]}e-9))^2+(y-({c[1]}e-9))^2)"
-                f"/(2*({sig}e-9)^2))")
+        return (f"({amp})*exp(-((x-{_matlab_length(c[0])})^2+(y-{_matlab_length(c[1])})^2)"
+                f"/(2*{_matlab_length(sig)}^2))")
 
     if op == "mexican_hat":
         c = piece["args"]["center"]
         r0 = piece["args"]["r0"]
         d = piece["args"]["depth"]
-        return (f"({d})*((sqrt((x-({c[0]}e-9))^2+(y-({c[1]}e-9))^2))^2"
-                f"-({r0}e-9)^2)^2/(({r0}e-9)^4) - ({d})")
+        return (f"({d})*((sqrt((x-{_matlab_length(c[0])})^2+(y-{_matlab_length(c[1])})^2))^2"
+                f"-{_matlab_length(r0)}^2)^2/({_matlab_length(r0)}^4) - ({d})")
 
     if op == "harmonic_2d":
         c = piece["args"]["center"]
         w = piece["args"]["omega_eV"]
-        return (f"0.5*({w}*1e18)*((x-({c[0]}e-9))^2+(y-({c[1]}e-9))^2)")
+        return (f"0.5*{_matlab_scaled(w, 1e18)}*"
+                f"((x-{_matlab_length(c[0])})^2+(y-{_matlab_length(c[1])})^2)")
         # Nota: omega_eV está en eV/nm², convertido a eV/m² → ×1e18
 
     if op == "linear":
         sl = piece["args"]["slope"]
         ax = piece["args"]["axis"]
         off = piece["args"].get("offset", 0.0)
-        return f"({sl}*1e9)*{ax} + ({off})"   # slope eV/nm → eV/m
+        return f"{_matlab_scaled(sl, 1e9)}*{ax} + ({off})"   # slope eV/nm → eV/m
 
     if op == "coulomb":
         c = piece["args"]["center"]
@@ -269,7 +281,8 @@ def _piece_to_matlab(piece: dict, params: dict | None = None) -> str:
         eps = piece["args"]["eps_r"]
         reg = piece["args"].get("regularization", 1.0)
         return (f"-{q}*1.439964e-9/({eps}*"
-                f"sqrt((x-({c[0]}e-9))^2+(y-({c[1]}e-9))^2+({reg}e-9)^2))")
+                f"sqrt((x-{_matlab_length(c[0])})^2+(y-{_matlab_length(c[1])})^2+"
+                f"{_matlab_length(reg)}^2))")
 
     if op == "raw_expr":
         # raw_expr se evalúa internamente con x,y en nm; COMSOL recibe x,y en m.
@@ -295,8 +308,9 @@ def _piece_to_matlab(piece: dict, params: dict | None = None) -> str:
         val = piece.get("value", 0.0)
         return f"({val})*({reg})"
 
-    # fallback: omitir (la app sigue funcionando con solver Python)
-    return "0"
+    raise ValueError(
+        f"La primitiva 2D '{op}' no tiene una traducción analítica equivalente a COMSOL."
+    )
 
 
 def _region_to_matlab(region: dict) -> str:
@@ -614,67 +628,96 @@ def design_to_matlab_expr_1d(design: dict) -> str:
     for piece in design.get("pieces", []):
         if piece.get("enabled", True) is False:
             continue
-        terms.append(_piece_to_matlab_1d(piece))
+        terms.append(_piece_to_matlab_1d(piece, design.get("parameters") or {}))
     return " + ".join(terms) if terms else "0"
 
 
-def _piece_to_matlab_1d(piece: dict) -> str:
+def _piece_to_matlab_1d(piece: dict, params: dict | None = None) -> str:
     op = piece.get("op")
     a = piece.get("args", {})
 
     if op == "constant": return f"({a['value']})"
 
     if op == "gaussian":
-        return (f"({a['amplitude']})*exp(-(x-({a['center']}e-9))^2"
-                f"/(2*({a['sigma']}e-9)^2))")
+        return (f"({a['amplitude']})*exp(-(x-{_matlab_length(a['center'])})^2"
+                f"/(2*{_matlab_length(a['sigma'])}^2))")
 
     if op == "harmonic":
         # omega_eV en eV/nm² → eV/m²: ×1e18
-        return (f"0.5*({a['omega_eV']*1e18})*(x-({a['center']}e-9))^2")
+        return (f"0.5*{_matlab_scaled(a['omega_eV'], 1e18)}*"
+                f"(x-{_matlab_length(a['center'])})^2")
 
     if op == "coulomb":
         return (f"-{a['charge']}*1.439964e-9/({a['eps_r']}*"
-                f"sqrt((x-({a['center']}e-9))^2+({a['regularization']}e-9)^2))")
+                f"sqrt((x-{_matlab_length(a['center'])})^2+"
+                f"{_matlab_length(a['regularization'])}^2))")
 
     if op == "linear":
-        return f"({a['slope']*1e9})*x + ({a.get('offset',0)})"
+        return f"{_matlab_scaled(a['slope'], 1e9)}*x + ({a.get('offset',0)})"
 
     if op == "exp_decay":
-        return f"({a['amplitude']})*exp(-abs(x-({a['center']}e-9))/({a['length']}e-9))"
+        return (f"({a['amplitude']})*exp(-abs(x-{_matlab_length(a['center'])})/"
+                f"{_matlab_length(a['length'])})")
 
     if op == "poschl_teller":
         # alpha en nm⁻¹ → m⁻¹: ×1e9
-        return f"-({a['depth']})/cosh(({a['alpha']*1e9})*(x-({a['center']}e-9)))^2"
+        return (f"-({a['depth']})/cosh({_matlab_scaled(a['alpha'], 1e9)}*"
+                f"(x-{_matlab_length(a['center'])}))^2")
 
     if op == "morse":
-        return (f"({a['De']})*(1-exp(-({a['a']*1e9})*(x-({a['x0']}e-9))))^2 - ({a['De']})")
+        return (f"({a['De']})*(1-exp(-{_matlab_scaled(a['a'], 1e9)}*"
+                f"(x-{_matlab_length(a['x0'])})))^2 - ({a['De']})")
 
     if op == "step":
-        return f"({a['height']})*(x>=({a['position']}e-9))"
+        return f"({a['height']})*(x>={_matlab_length(a['position'])})"
 
     if op == "barrier":
-        return (f"({a['height']})*(abs(x-({a['center']}e-9)) <= ({a['width']/2}e-9))")
+        half_width = (f"({a['width']})/2" if isinstance(a['width'], str)
+                      else _matlab_length(a['width'] / 2))
+        return (f"({a['height']})*(abs(x-{_matlab_length(a['center'])}) <= {half_width})")
+
+    if op == "infinite_wall":
+        cmp = "<=" if a.get("side", "left") == "left" else ">="
+        return f"({a.get('V_inf', 1000.0)})*(x {cmp} {_matlab_length(a['position'])})"
+
+    if op == "triangular":
+        wall = _matlab_length(a["x_wall"])
+        slope = _matlab_scaled(a["slope"], 1e9)
+        return (f"if(x<={wall},({a.get('V_inf', 1000.0)}),"
+                f"{slope}*(x-{wall}))")
 
     if op == "raw_expr":
-        return "(" + a["expr"].replace("**", "^") + ")"
+        expr = a["expr"].replace("**", "^")
+        expr = re.sub(r"\bx\b", "(x/(1[nm]))", expr)
+        for name in sorted(params or {}, key=len, reverse=True):
+            unit = _param_unit_for_expr(name)
+            repl = f"({name}/(1[{unit}]))" if unit in {"nm", "deg"} else name
+            expr = re.sub(rf"\b{re.escape(name)}\b", repl, expr)
+        return "(" + expr + ")"
 
     if op == "mask":
         return f"({piece.get('value',0)})*({_region_to_matlab_1d(piece['region'])})"
 
-    return "0"
+    raise ValueError(
+        f"La primitiva 1D '{op}' no tiene una traducción analítica equivalente a COMSOL."
+    )
 
 
 def _region_to_matlab_1d(region: dict) -> str:
     op = region.get("op")
     a = region.get("args", {})
     if op == "interval":
-        return f"(abs(x-({a['center']}e-9)) <= ({a['length']/2}e-9))"
+        half_length = (f"({_matlab_length(a['length'])})/2"
+                       if isinstance(a["length"], str)
+                       else _matlab_length(a["length"] / 2))
+        return f"(abs(x-{_matlab_length(a['center'])}) <= {half_length})"
     if op == "half_line":
         cmp = ">=" if a.get("side","positive") == "positive" else "<="
-        return f"(x {cmp} ({a['position']}e-9))"
+        return f"(x {cmp} {_matlab_length(a['position'])})"
     if op == "strip":
-        return f"((x>={a['x_min']}e-9) & (x<={a['x_max']}e-9))"
-    return "1"
+        return (f"((x>={_matlab_length(a['x_min'])}) & "
+                f"(x<={_matlab_length(a['x_max'])}))")
+    raise ValueError(f"La región 1D '{op}' no tiene traducción equivalente a COMSOL.")
 
 
 def generate_comsol_recipe(design: dict) -> str:

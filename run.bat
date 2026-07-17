@@ -66,12 +66,12 @@ if errorlevel 1 (
 )
 
 REM ----------------------------------------------------------------
-REM 4) Detectar cambios en requirements.txt via SHA256
+REM 4) Detectar cambios en pyproject.toml via SHA256
 REM    Reinstala solo si el hash es distinto al guardado.
 REM ----------------------------------------------------------------
 set "REQ_HASH_FILE=.venv\.requirements.sha256"
 set "REQ_HASH_CUR="
-for /f "skip=1 tokens=*" %%h in ('certutil -hashfile requirements.txt SHA256 ^| findstr /v ":"') do (
+for /f "skip=1 tokens=*" %%h in ('certutil -hashfile pyproject.toml SHA256 ^| findstr /v ":"') do (
     if not defined REQ_HASH_CUR set "REQ_HASH_CUR=%%h"
 )
 set "REQ_HASH_OLD="
@@ -80,12 +80,12 @@ if exist "%REQ_HASH_FILE%" (
 )
 
 if not "%REQ_HASH_CUR%"=="%REQ_HASH_OLD%" (
-    echo [setup] requirements.txt cambio o es primera vez - instalando deps...
+    echo [setup] pyproject.toml cambio o es primera vez - instalando proyecto...
     python -m pip install --upgrade pip
-    python -m pip install -r requirements.txt
+    python -m pip install -e .
     if errorlevel 1 (
         echo.
-        echo [ERROR] Fallo "pip install -r requirements.txt".
+        echo [ERROR] Fallo "pip install -e .".
         echo Revisa el mensaje arriba. Causas tipicas:
         echo   - sin conexion a internet
         echo   - falta compilador C/C++ para algun paquete
@@ -97,7 +97,7 @@ if not "%REQ_HASH_CUR%"=="%REQ_HASH_OLD%" (
     > "%REQ_HASH_FILE%" echo %REQ_HASH_CUR%
     echo [setup] Deps instaladas OK.
 ) else (
-    echo [info] Deps ya instaladas (requirements.txt sin cambios).
+    echo [info] Proyecto ya instalado (pyproject.toml sin cambios).
 )
 
 REM ----------------------------------------------------------------

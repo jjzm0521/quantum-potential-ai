@@ -1,13 +1,12 @@
 """
 qpot.session — estado de sesión basado en archivos para el flujo "agente externo".
 
-El agente (Claude Code / ChatGPT / Codex / Antigravity) y el visor humano comparten un
-único Design en `session/design.json`. Todas las operaciones (render, solve, export,
-verify) leen ese archivo y escriben artefactos junto a él, sin llamar a ninguna API.
+El agente y el visor humano comparten el Design del proyecto activo. Todas las operaciones
+leen ese archivo y escriben artefactos junto a él, sin llamar a ninguna API.
 
 La carpeta de sesión se resuelve así:
   1. variable de entorno QPOT_SESSION_DIR si está definida
-  2. <cwd>/session  (por defecto)
+  2. proyecto activo bajo QPOT_WORKSPACE_DIR o <cwd>/workspace
 """
 
 from __future__ import annotations
@@ -15,6 +14,8 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import copy
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +38,8 @@ from core import comsol_export
 from core.exporter_mph import export_mph_or_fallback, export_mph_geometry_or_fallback
 from ai.validators import validate_design
 from ai.agent_harness import describe_design_contract
+from . import projects
+from .schema import migrate_design, parameter_values, parameterize_preset, design_hash
 
 
 SESSION_DIR_ENV = "QPOT_SESSION_DIR"
@@ -57,7 +60,7 @@ VALID_MATERIALS = set(MATERIALS.keys())
 
 def session_dir() -> Path:
     raw = os.environ.get(SESSION_DIR_ENV, "").strip()
-    d = Path(raw) if raw else Path.cwd() / DEFAULT_SESSION_DIRNAME
+    d = Path(raw) if raw else projects.active_project_dir()
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -73,7 +76,14 @@ def artifact(name: str) -> Path:
 def clear_session() -> None:
     """Elimina artefactos de la sesión activa antes de iniciar un proyecto nuevo."""
     sd = session_dir()
+    current = sd / DESIGN_FILE
+    if current.exists():
+        history = sd / "history"
+        history.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(current, projects.revision_path(sd, "before-clear"))
     for child in sd.iterdir():
+        if child.name in {"history", "runs", "exports", "project.json", "target.json"}:
+            continue
         if child.is_dir():
             shutil.rmtree(child)
         else:
@@ -108,7 +118,8 @@ def new_design(
         dom["L"] = float(L)
     if N is not None:
         dom["N"] = int(N)
-    return {"dim": dim, "material": material, "domain": dom, "pieces": []}
+    return {"schema_version": "1.0", "dim": dim, "material": material,
+            "domain": dom, "pieces": []}
 
 
 def load_design() -> dict:
@@ -118,12 +129,21 @@ def load_design() -> dict:
             f"No hay sesión activa en {p}.\n"
             f"Crea una con:  python -m qpot new --dim 1 --material GaAs"
         )
-    return json.loads(p.read_text(encoding="utf-8"))
+    design = json.loads(p.read_text(encoding="utf-8"))
+    migrated, _ = migrate_design(design)
+    return migrated
 
 
 def save_design(design: dict) -> Path:
     p = design_path()
-    p.write_text(json.dumps(design, ensure_ascii=False, indent=2), encoding="utf-8")
+    migrated, _ = migrate_design(design)
+    if p.exists():
+        history = p.parent / "history"
+        history.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(p, projects.revision_path(p.parent))
+    tmp = p.with_name(f".{p.name}.tmp")
+    tmp.write_text(json.dumps(migrated, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, p)
     return p
 
 
@@ -193,18 +213,120 @@ def solve_design(design: dict, n_states: int = 6):
         res = solve(V, x, y, m_eff, n_states=n_states)
 
     energies = [round(float(e), 6) for e in res.energies_meV.tolist()]
+    escape_threshold = _escape_threshold_meV(res.V_eV, dim)
     summary = {
         "dim": dim,
         "material": material,
         "m_eff": m_eff,
         "n_states": len(energies),
+        "backend": getattr(res, "backend", "scipy-arpack-cpu"),
+        "requested_states": getattr(res, "requested_states", len(energies)),
+        "computed_states": getattr(res, "computed_states", len(energies)),
         "energies_meV": energies,
-        "n_bound_states": sum(1 for e in energies if e < 0.0),
+        "escape_threshold_meV": round(escape_threshold, 6),
+        "n_bound_states": sum(1 for e in energies if e < escape_threshold),
+        "solver_completed": True,
         "convergence_ok": bool(res.convergence_ok),
+        "eigensolver_residual_ok": bool(max(res.residuals, default=float("inf")) < 1e-6),
+        "max_relative_residual": float(max(res.residuals, default=float("inf"))),
+        "orthogonality_error": float(res.orthogonality_error),
+        "max_normalization_error": float(max(res.normalization_errors, default=float("inf"))),
+        "boundary_probabilities": [round(float(v), 8) for v in res.boundary_probabilities.tolist()],
+        "boundary_leakage_ok": bool(max(res.boundary_probabilities, default=1.0) < 1e-3),
         "grid": {"L": L, "N": N},
         "potential_range_eV": _range_summary(res.V_eV),
     }
     return res, summary
+
+
+def _escape_threshold_meV(V_eV: np.ndarray, dim: int) -> float:
+    """Lowest robust exterior potential; states below it cannot escape the domain."""
+    if int(dim) == 1:
+        n = len(V_eV)
+        band = max(2, int(np.ceil(0.05 * n)))
+        exterior = np.concatenate((V_eV[:band], V_eV[-band:]))
+    else:
+        ny, nx = V_eV.shape
+        band = max(1, int(np.ceil(0.05 * min(nx, ny))))
+        mask = np.zeros_like(V_eV, dtype=bool)
+        mask[:band, :] = mask[-band:, :] = True
+        mask[:, :band] = mask[:, -band:] = True
+        exterior = V_eV[mask]
+    finite = exterior[np.isfinite(exterior)]
+    return float(np.percentile(finite, 5) * 1000.0) if finite.size else float("-inf")
+
+
+def _energy_convergence(reference: list[float], candidate: list[float], *, discontinuous: bool) -> dict:
+    n = min(len(reference), len(candidate))
+    abs_tol = 0.5 if discontinuous else 0.1
+    rel_tol = 0.03 if discontinuous else 0.01
+    deltas = [abs(candidate[i] - reference[i]) for i in range(n)]
+    rel = [deltas[i] / max(abs(reference[i]), abs(candidate[i]), 1e-9) for i in range(n)]
+    per_state = [deltas[i] <= abs_tol or rel[i] <= rel_tol for i in range(n)]
+    return {
+        "ok": bool(n and all(per_state)),
+        "absolute_tolerance_meV": abs_tol,
+        "relative_tolerance": rel_tol,
+        "max_absolute_delta_meV": round(max(deltas, default=float("inf")), 6),
+        "max_relative_delta": round(max(rel, default=float("inf")), 8),
+        "deltas_meV": [round(v, 6) for v in deltas],
+    }
+
+
+def diagnose_design(design: dict, n_states: int = 6) -> tuple[Any, dict]:
+    """Solve and verify eigensolver, grid, domain, normalization and boundary leakage."""
+    base = resolve_params(design)
+    result, summary = solve_design(base, n_states=n_states)
+    dim = int(base.get("dim", 2))
+    L, N = domain_LN(base)
+    text = json.dumps(base.get("pieces", []))
+    discontinuous = any(token in text for token in ('"mask"', '"where"', '"barrier"', '"step"', '"infinite_wall"'))
+
+    refined = copy.deepcopy(base)
+    max_n = 1024 if dim == 1 else 256
+    if N >= max_n:
+        refined_n = None
+        grid_check = {"ok": False, "base_N": N, "refined_N": None,
+                      "reason": f"N={N} alcanza el límite automático {max_n}; "
+                                "ejecuta una convergencia explícita en una máquina con más memoria."}
+    else:
+        refined_n = min(max_n, max(N + 16, int(round(N * 1.5))))
+        refined["domain"]["N"] = refined_n
+        _, refined_summary = solve_design(refined, n_states=n_states)
+        grid_check = _energy_convergence(summary["energies_meV"], refined_summary["energies_meV"],
+                                         discontinuous=discontinuous)
+        grid_check.update({"base_N": N, "refined_N": refined_n,
+                           "refined_energies_meV": refined_summary["energies_meV"]})
+
+    expanded = copy.deepcopy(base)
+    expanded_L = L * 1.2
+    if N >= max_n:
+        expanded_N = None
+        domain_check = {"ok": False, "base_L_nm": L, "expanded_L_nm": expanded_L,
+                        "expanded_N": None,
+                        "reason": "La expansión preservando dx excedería el límite automático de memoria."}
+    else:
+        expanded_N = min(max_n, max(N + 2, int(round(N * 1.2))))
+        expanded["domain"] = {"L": expanded_L, "N": expanded_N}
+        _, expanded_summary = solve_design(expanded, n_states=n_states)
+        domain_check = _energy_convergence(summary["energies_meV"], expanded_summary["energies_meV"],
+                                           discontinuous=discontinuous)
+        domain_check.update({"base_L_nm": L, "expanded_L_nm": expanded_L,
+                             "expanded_N": expanded_N,
+                             "expanded_energies_meV": expanded_summary["energies_meV"]})
+
+    summary["grid_convergence"] = grid_check
+    summary["grid_convergence_ok"] = grid_check["ok"]
+    summary["domain_convergence"] = domain_check
+    summary["domain_convergence_ok"] = domain_check["ok"]
+    summary["solver_valid"] = bool(
+        summary["solver_completed"] and summary["eigensolver_residual_ok"]
+        and summary["grid_convergence_ok"] and summary["domain_convergence_ok"]
+        and summary["boundary_leakage_ok"]
+        and summary["orthogonality_error"] < 1e-8
+        and summary["max_normalization_error"] < 1e-8
+    )
+    return result, summary
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +348,7 @@ def export_design(
     fmt: str,
     out_path: str | Path | None = None,
     n_states: int = 6,
+    allow_fallback: bool = False,
 ) -> tuple[Path | None, str]:
     """Exporta el Design al formato pedido. Devuelve (path, mensaje)."""
     fmt = fmt.lower()
@@ -255,12 +378,25 @@ def export_design(
         return out, f"Script COMSOL LiveLink (.m, por geometría) en {out}"
 
     if fmt == "mph":
+        verification_path = sd / "verification.json"
+        if not verification_path.exists():
+            return None, "Export .mph bloqueado: corre `qpot verify`, inspecciona el render y registra `qpot assess`."
+        verified = json.loads(verification_path.read_text(encoding="utf-8"))
+        if verified.get("design_hash") != design_hash(design):
+            return None, "Export .mph bloqueado: el Design cambió después del último verify."
+        if not verified.get("ready_to_export"):
+            return None, "Export .mph bloqueado: verification.ready_to_export no es true."
+        strict_issues = comsol_export.exportability_issues(design)
+        if strict_issues:
+            return None, "Export .mph estricto bloqueado:\n  - " + "\n  - ".join(strict_issues)
         out = Path(out_path) if out_path else sd / "model.mph"
         if dim == 2 and _has_region_assignments(design):
             # .mph NATIVO por geometría + interfaz Schrödinger (lo que el usuario necesita).
             path, msg = export_mph_geometry_or_fallback(design, material, m_eff, n_states, out)
             if path is not None:
                 return path, msg
+            if not allow_fallback:
+                return None, msg + "\nUsa --allow-fallback para generar una receta explícitamente."
             # Sin MPh: entregamos la receta (no .m, porque el usuario no usa MATLAB).
             rec = Path(out_path).with_suffix(".md") if out_path else sd / "comsol_recipe.md"
             rec.write_text(
@@ -272,6 +408,8 @@ def export_design(
         path, msg = export_mph_or_fallback(design, material, m_eff, n_states, out)
         if path is not None:
             return path, msg
+        if not allow_fallback:
+            return None, msg + "\nUsa --allow-fallback para generar el script .m."
         m_out = out.with_suffix(".m")
         _write_m_script(design, m_out, material, m_eff, n_states)
         return m_out, f"{msg}\nSe generó el script COMSOL .m como alternativa: {m_out}"
@@ -310,7 +448,7 @@ def _write_m_script(
         result, _ = solve_design(design, n_states=n_states)
     L, N = domain_LN(design)
     params = {"L_nm": L, "N": N, "material": material}
-    params.update(design.get("parameters") or {})
+    params.update(parameter_values(design))
     if dim == 1:
         expr = design_to_matlab_expr_1d(design)
         data = exporter.to_comsol_m_1d(result, "qpot_design", params, material, m_eff, expr)
@@ -364,4 +502,4 @@ def preset_design(name: str, dim: int, params: dict | None = None) -> dict:
     design = preset_to_design(name, params or {}, dim=int(dim))
     design.setdefault("domain", default_domain(int(dim)))
     design.setdefault("material", "GaAs")
-    return design
+    return parameterize_preset(design)

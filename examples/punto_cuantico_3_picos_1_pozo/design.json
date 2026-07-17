@@ -1,0 +1,211 @@
+{
+  "schema_version": "1.0",
+  "dim": 2,
+  "material": "GaAs",
+  "domain": {
+    "L": 100.0,
+    "N": 120
+  },
+  "pieces": [
+    {
+      "op": "gaussian",
+      "label": "cuerpo base izquierdo",
+      "args": {
+        "center": [
+          "x_body_left",
+          0
+        ],
+        "amplitude": "V_body",
+        "sigma": "sigma_body"
+      }
+    },
+    {
+      "op": "gaussian",
+      "label": "cuerpo base derecho",
+      "args": {
+        "center": [
+          "x_body_right",
+          0
+        ],
+        "amplitude": "V_body",
+        "sigma": "sigma_body"
+      }
+    },
+    {
+      "op": "gaussian",
+      "label": "protuberancia lateral izquierda",
+      "args": {
+        "center": [
+          "x_left",
+          "y_left"
+        ],
+        "amplitude": "V_left_peak",
+        "sigma": "sigma_left"
+      }
+    },
+    {
+      "op": "gaussian",
+      "label": "protuberancia central interna",
+      "args": {
+        "center": [
+          "x_center",
+          "y_center"
+        ],
+        "amplitude": "V_center_peak",
+        "sigma": "sigma_center"
+      }
+    },
+    {
+      "op": "gaussian",
+      "label": "protuberancia lateral derecha",
+      "args": {
+        "center": [
+          "x_right",
+          "y_right"
+        ],
+        "amplitude": "V_right_peak",
+        "sigma": "sigma_right"
+      }
+    },
+    {
+      "op": "gaussian",
+      "label": "depresion alrededor de la protuberancia central",
+      "args": {
+        "center": [
+          "x_center",
+          "y_center"
+        ],
+        "amplitude": "V_central_trench",
+        "sigma": "sigma_central_trench"
+      }
+    }
+  ],
+  "parameters": {
+    "x_left": {
+      "value": -19,
+      "unit": "nm",
+      "dtype": "float",
+      "kind": "length",
+      "role": "Parámetro x_left"
+    },
+    "y_left": {
+      "value": 3,
+      "unit": "nm",
+      "dtype": "float",
+      "kind": "length",
+      "role": "Parámetro y_left"
+    },
+    "sigma_left": {
+      "value": 6.5,
+      "unit": "nm",
+      "dtype": "float",
+      "kind": "length",
+      "role": "Parámetro sigma_left"
+    },
+    "x_center": {
+      "value": 0,
+      "unit": "nm",
+      "dtype": "float",
+      "kind": "length",
+      "role": "Parámetro x_center"
+    },
+    "y_center": {
+      "value": -1,
+      "unit": "nm",
+      "dtype": "float",
+      "kind": "length",
+      "role": "Parámetro y_center"
+    },
+    "sigma_center": {
+      "value": 4.5,
+      "unit": "nm",
+      "dtype": "float",
+      "kind": "length",
+      "role": "Parámetro sigma_center"
+    },
+    "x_right": {
+      "value": 17,
+      "unit": "nm",
+      "dtype": "float",
+      "kind": "length",
+      "role": "Parámetro x_right"
+    },
+    "y_right": {
+      "value": -3,
+      "unit": "nm",
+      "dtype": "float",
+      "kind": "length",
+      "role": "Parámetro y_right"
+    },
+    "sigma_right": {
+      "value": 7,
+      "unit": "nm",
+      "dtype": "float",
+      "kind": "length",
+      "role": "Parámetro sigma_right"
+    },
+    "x_body_left": {
+      "value": -8,
+      "unit": "nm",
+      "dtype": "float",
+      "kind": "length",
+      "role": "Parámetro x_body_left"
+    },
+    "x_body_right": {
+      "value": 8,
+      "unit": "nm",
+      "dtype": "float",
+      "kind": "length",
+      "role": "Parámetro x_body_right"
+    },
+    "sigma_body": {
+      "value": 20,
+      "unit": "nm",
+      "dtype": "float",
+      "kind": "length",
+      "role": "Parámetro sigma_body"
+    },
+    "V_body": {
+      "value": -0.06,
+      "unit": "eV",
+      "dtype": "float",
+      "kind": "energy",
+      "role": "Parámetro V_body"
+    },
+    "V_left_peak": {
+      "value": 0.1,
+      "unit": "eV",
+      "dtype": "float",
+      "kind": "energy",
+      "role": "Parámetro V_left_peak"
+    },
+    "V_center_peak": {
+      "value": 0.24,
+      "unit": "eV",
+      "dtype": "float",
+      "kind": "energy",
+      "role": "Parámetro V_center_peak"
+    },
+    "V_right_peak": {
+      "value": 0.11,
+      "unit": "eV",
+      "dtype": "float",
+      "kind": "energy",
+      "role": "Parámetro V_right_peak"
+    },
+    "V_central_trench": {
+      "value": -0.08,
+      "unit": "eV",
+      "dtype": "float",
+      "kind": "energy",
+      "role": "Parámetro V_central_trench"
+    },
+    "sigma_central_trench": {
+      "value": 10,
+      "unit": "nm",
+      "dtype": "float",
+      "kind": "length",
+      "role": "Parámetro sigma_central_trench"
+    }
+  }
+}

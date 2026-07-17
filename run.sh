@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Quantum Potential AI - launcher portable (Git Bash / WSL / Linux / macOS)
-# Reinstala deps solo si requirements.txt cambio (hash SHA256).
+# Reinstala el proyecto solo si pyproject.toml cambia (hash SHA256).
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -52,21 +52,21 @@ hash_file() {
   fi
 }
 REQ_HASH_FILE=".venv/.requirements.sha256"
-REQ_HASH_CUR=$(hash_file requirements.txt)
+REQ_HASH_CUR=$(hash_file pyproject.toml)
 REQ_HASH_OLD=$(cat "$REQ_HASH_FILE" 2>/dev/null || true)
 
 if [ "$REQ_HASH_CUR" != "$REQ_HASH_OLD" ]; then
-  echo "[setup] requirements.txt cambio o es primera vez - instalando deps..."
+  echo "[setup] pyproject.toml cambio o es primera vez - instalando proyecto..."
   python -m pip install --upgrade pip
-  if ! python -m pip install -r requirements.txt; then
+  if ! python -m pip install -e .; then
     echo
-    echo "[ERROR] Fallo pip install -r requirements.txt" >&2
+    echo "[ERROR] Fallo pip install -e ." >&2
     exit 1
   fi
   echo "$REQ_HASH_CUR" > "$REQ_HASH_FILE"
   echo "[setup] Deps instaladas OK."
 else
-  echo "[info] Deps ya instaladas (requirements.txt sin cambios)."
+  echo "[info] Proyecto ya instalado (pyproject.toml sin cambios)."
 fi
 
 # 5) Entorno listo - abrir visualizador local

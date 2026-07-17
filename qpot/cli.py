@@ -1,7 +1,7 @@
 """
 qpot.cli — interfaz de línea de comandos.
 
-Cada subcomando opera sobre el Design compartido en `session/design.json`. La salida está
+Cada subcomando opera sobre el Design del proyecto activo. La salida está
 pensada para que un LLM (o un humano) la lea fácilmente: acciones imprimen un mensaje
 corto; consultas (state, describe, solve, verify) imprimen JSON.
 
@@ -15,7 +15,10 @@ import json
 import sys
 from pathlib import Path
 
-from . import session, render
+from . import session, render, verification, projects
+from .schema import migrate_design, set_parameter, normalize_parameter, design_hash
+from core import features as _features
+from core import image_analysis as _image_analysis
 
 
 # ---------------------------------------------------------------------------
@@ -194,9 +197,10 @@ def cmd_param(args) -> int:
         _ok(f"parámetro '{args.name}' eliminado. parameters = {params}")
         return 0
     value = _parse_value(args.value)
-    params[args.name] = value
+    set_parameter(design, args.name, value)
     session.save_design(design)
-    _ok(f"parameters['{args.name}'] = {value!r}  (referencia en piezas como \"{args.name}\")")
+    _ok(f"parameters['{args.name}'] = {normalize_parameter(args.name, design['parameters'][args.name])!r}  "
+        f"(referencia en piezas como \"{args.name}\")")
     return 0
 
 
@@ -224,6 +228,21 @@ def cmd_set_image(args) -> int:
     dst = session.register_source_image(args.path)
     _ok(f"Imagen fuente registrada: {dst}\n"
         f"→ Léela tú mismo (el agente) para diseñar/comparar el potencial.")
+    return 0
+
+
+def cmd_analyze_image(args) -> int:
+    """Visión clásica (sin API): sugiere preset + params iniciales desde la foto."""
+    suggestion = _image_analysis.analyze_image(args.path)
+    # Registra la imagen como fuente para que verify la compare luego.
+    dst = session.register_source_image(args.path)
+    suggestion["registered_as"] = str(dst)
+    suggestion["next_action"] = (
+        "Sugerencia de ARRANQUE (no aplicada). Tú decides: usa "
+        "`qpot from-preset <suggested_preset> --dim <suggested_dim> "
+        "--params '<suggested_params>'`, luego `qpot verify` y refina."
+    )
+    _print_json(suggestion)
     return 0
 
 
@@ -264,85 +283,236 @@ def cmd_solve(args) -> int:
 def cmd_verify(args) -> int:
     """Herramienta del loop: render + validación + solve → señal objetiva para el agente."""
     design = session.load_design()
-    report: dict = {"design_dim": int(design.get("dim", 2)),
-                    "material": design.get("material", "GaAs")}
-
-    # 1. Validación
-    issues = session.validation_issues(design)
-    report["validation"] = {"ok": not issues, "issues": issues}
-
-    # 2. Render del potencial (para que el agente lo VEA)
-    field = session.evaluate_potential(design)
-    render_png = session.artifact("render.png")
-    render.render_potential(field, render_png, title=f"Potencial ({field['dim']}D)")
-    report["render_png"] = str(render_png)
-    report["potential_range_eV"] = session._range_summary(field["V_eV"])
-
-    # 3. Solve (diagnóstico físico)
-    try:
-        res, summary = session.solve_design(design, n_states=args.n_states)
-        wf_png = session.artifact("wavefunctions.png")
-        render.render_wavefunctions(res, summary["dim"], wf_png,
-                                    n_show=min(4, summary["n_states"]))
-        report["solver"] = {
-            "convergence_ok": summary["convergence_ok"],
-            "energies_meV": summary["energies_meV"],
-            "n_bound_states": summary["n_bound_states"],
-            "wavefunctions_png": str(wf_png),
-        }
-    except Exception as exc:  # noqa: BLE001
-        report["solver"] = {"error": str(exc)}
-
-    # 3b. Zonas de potencial disjuntas (para que el export a COMSOL sea fiel)
-    overlap = session.zone_overlap_issues(design)
-    report["zone_overlap"] = {"ok": not overlap, "issues": overlap}
-
-    # 4. Imagen fuente → instrucción de comparación visual
-    src = session.source_image_path()
-    if src is not None:
-        report["source_image"] = str(src)
-        report["visual_check"] = (
-            "Hay imagen fuente. COMPÁRALA con render_png: ¿coinciden geometría, "
-            "número de pozos/barreras, simetría y escalas? Si no, ajusta piezas y repite verify."
-        )
-    else:
-        report["visual_check"] = (
-            "No hay imagen fuente. Compara render_png contra la descripción textual del objetivo."
-        )
-
-    # 5. Veredicto objetivo (la calificación final la pone el agente)
-    objective_ok = (not issues) and report["solver"].get("convergence_ok", False)
-    report["objective_ok"] = bool(objective_ok)
-    report["next_actions"] = _verify_hints(issues, report["solver"])
-    if overlap:
-        report["next_actions"].insert(
-            0, "Hay zonas de potencial que se SOLAPAN; hazlas disjuntas "
-               "(usa complement/intersection) o el .mph a COMSOL no coincidirá.")
-
+    report = verification.verify_design(design, n_states=args.n_states, persist=True)
     _print_json(report)
-    return 0 if objective_ok else 1
+    # A missing target prevents ready_to_export, but does not make a valid numerical
+    # verification fail at the shell level.
+    return 0 if report["design_valid"] and report["solver_valid"] else 1
 
 
-def _verify_hints(issues: list[str], solver: dict) -> list[str]:
-    hints: list[str] = []
-    if issues:
-        hints.append("Resuelve los issues de validación con `qpot set` / `qpot add` / `qpot remove`.")
-    if "error" in solver:
-        hints.append("El solver falló: revisa dominio (L/N) y que el potencial tenga estructura.")
-    elif solver.get("n_bound_states", 0) == 0:
-        hints.append("No hay estados ligados: ¿el pozo es suficientemente profundo/ancho? "
-                     "Ajusta 'value'/'depth' o el dominio.")
-    if not hints:
-        hints.append("Todo objetivo OK. Revisa el PNG y, si coincide con el objetivo, exporta.")
-    return hints
+def cmd_sweep(args) -> int:
+    """Barrido paramétrico E_n(parámetro) — la gráfica clásica de análisis (sin COMSOL).
+
+    Barre un parámetro nombrado (bloque `parameters`) o, con --piece, un arg de una
+    pieza. Resuelve Schrödinger en cada punto y guarda sweep.csv + sweep.png.
+    """
+    import copy as _copy
+
+    try:
+        lo_s, hi_s, n_s = args.range.split(":")
+        lo, hi, n_pts = float(lo_s), float(hi_s), int(n_s)
+    except ValueError:
+        _ok("Formato de --range inválido; usa a:b:n  (p. ej. 0.1:0.5:9)")
+        return 1
+    if n_pts < 2:
+        _ok("--range necesita al menos 2 puntos.")
+        return 1
+
+    base = session.load_design()
+    if args.piece is None:
+        params = base.get("parameters") or {}
+        if args.name not in params:
+            _ok(f"'{args.name}' no está en `parameters` {list(params)}. "
+                f"Defínelo con `qpot param {args.name} <valor>` o usa --piece IDX.")
+            return 1
+    else:
+        pieces = base.get("pieces", [])
+        if not (0 <= args.piece < len(pieces)):
+            _ok(f"Índice --piece {args.piece} fuera de rango (hay {len(pieces)} piezas).")
+            return 1
+
+    values = [lo + (hi - lo) * i / (n_pts - 1) for i in range(n_pts)]
+    rows: list[dict] = []
+    energies_all: list[list[float]] = []
+    for v in values:
+        d = _copy.deepcopy(base)
+        if args.piece is None:
+            set_parameter(d, args.name, v)
+        else:
+            piece = d["pieces"][args.piece]
+            if args.name in ("value",):
+                piece[args.name] = v
+            else:
+                piece.setdefault("args", {})[args.name] = v
+        try:
+            _, summary = session.solve_design(d, n_states=args.n_states)
+            energies = summary["energies_meV"]
+            rows.append({"value": v, "ok": True, "energies_meV": energies,
+                         "n_bound_states": summary["n_bound_states"]})
+            energies_all.append(energies)
+        except Exception as exc:  # noqa: BLE001
+            rows.append({"value": v, "ok": False, "error": str(exc)})
+            energies_all.append([])
+
+    # Artefactos: CSV (valor, E0..Ek) + PNG
+    csv_path = session.artifact("sweep.csv")
+    n_max = max((len(e) for e in energies_all), default=0)
+    with open(csv_path, "w", encoding="utf-8") as fh:
+        fh.write(args.name + "," + ",".join(f"E{i}_meV" for i in range(n_max)) + "\n")
+        for row, es in zip(rows, energies_all):
+            fh.write(f"{row['value']}" + "".join(f",{e}" for e in es) + "\n")
+    png_path = session.artifact("sweep.png")
+    if any(energies_all):
+        render.render_sweep(values, energies_all, args.name, png_path)
+
+    ok_pts = sum(1 for r in rows if r["ok"])
+    _print_json({
+        "param": args.name,
+        "piece": args.piece,
+        "n_points": n_pts,
+        "n_solved": ok_pts,
+        "results": rows,
+        "artifacts": {"csv": str(csv_path),
+                      "png": str(png_path) if any(energies_all) else None},
+        "note": "El Design en sesión NO cambió; el barrido usa copias. "
+                "MIRA sweep.png para el comportamiento E_n(parámetro).",
+    })
+    return 0 if ok_pts == n_pts else 1
 
 
 def cmd_export(args) -> int:
     design = session.load_design()
     path, msg = session.export_design(design, args.format, out_path=args.out,
-                                      n_states=args.n_states)
+                                      n_states=args.n_states,
+                                      allow_fallback=getattr(args, "allow_fallback", False))
     _ok(msg)
     return 0 if path is not None else 1
+
+
+def cmd_geometry_study(args) -> int:
+    """Compare simplifications against a detailed reference without changing the project."""
+    from . import geometry_study
+
+    candidates: list[tuple[str, str]] = []
+    for raw in args.candidate:
+        if "=" not in raw:
+            raise ValueError("--candidate usa ETIQUETA=design.json")
+        label, path = raw.split("=", 1)
+        if not label.strip() or not path.strip():
+            raise ValueError("--candidate requiere etiqueta y ruta no vacías.")
+        candidates.append((label.strip(), path.strip()))
+    report = geometry_study.compare_designs(
+        args.reference,
+        candidates,
+        reference_label=args.reference_label,
+        n_states=args.n_states,
+        tolerance_pct=args.tolerance_pct,
+        measure_tolerance_pct=args.measure_tolerance_pct,
+        aspect_tolerance_pct=args.aspect_tolerance_pct,
+        gap_tolerance_pct=args.gap_tolerance_pct,
+        gap_absolute_tolerance_meV=args.gap_absolute_tolerance_meV,
+        objective=args.objective,
+    )
+    out = Path(args.out) if args.out else session.artifact("geometry_study.json")
+    json_path, png_path = geometry_study.save_study(report, out)
+    output = dict(report)
+    output["artifacts"] = {"json": str(json_path), "png": str(png_path)}
+    _print_json(output)
+    return 0 if all(model["solver_valid"] for model in [report["reference"], *report["candidates"]]) else 1
+
+
+def cmd_migrate(args) -> int:
+    raw_path = session.design_path()
+    raw = json.loads(raw_path.read_text(encoding="utf-8"))
+    migrated, changed = migrate_design(raw)
+    if changed:
+        session.save_design(migrated)
+        _ok(f"Design migrado a schema 1.0. Copia previa guardada en {raw_path.parent / 'history'}")
+    else:
+        _ok("Design ya usa schema 1.0; no hubo cambios.")
+    return 0
+
+
+def cmd_project_new(args) -> int:
+    path = projects.create_project(args.name, dim=args.dim, material=args.material, activate=True)
+    _ok(f"Proyecto creado y activado: {path}")
+    return 0
+
+
+def cmd_project_list(args) -> int:
+    _print_json(projects.list_projects())
+    return 0
+
+
+def cmd_project_open(args) -> int:
+    _ok(f"Proyecto activo: {projects.set_active(args.name)}")
+    return 0
+
+
+def cmd_project_clone(args) -> int:
+    _ok(f"Proyecto clonado y activado: {projects.clone_project(args.source, args.destination)}")
+    return 0
+
+
+def cmd_project_archive(args) -> int:
+    _ok(f"Proyecto archivado: {projects.archive_project(args.name)}")
+    return 0
+
+
+def cmd_project_export(args) -> int:
+    _ok(f"Paquete reproducible: {projects.export_project(args.name, args.out)}")
+    return 0
+
+
+def cmd_demo_install(args) -> int:
+    demos = {
+        "tres-picos": (
+            Path(__file__).resolve().parents[1]
+            / "examples" / "punto_cuantico_3_picos_1_pozo"
+        ),
+    }
+    project_name = args.name or f"demo-{args.demo}"
+    path = projects.install_demo(demos[args.demo], project_name)
+    _ok(
+        f"Demo '{args.demo}' instalado y activado: {path}\n"
+        "Siguiente paso: qpot verify --n-states 6"
+    )
+    return 0
+
+
+def cmd_comsol_remote(args) -> int:
+    from . import comsol_remote
+    result = comsol_remote.certify(session.design_path(), args.out)
+    _print_json(result)
+    return 0 if result["compatible"] else 1
+
+
+def cmd_target(args) -> int:
+    features = json.loads(args.features) if args.features else {}
+    tolerances = json.loads(args.tolerances) if args.tolerances else {}
+    if not isinstance(features, dict) or not isinstance(tolerances, dict):
+        raise ValueError("--features y --tolerances deben ser objetos JSON.")
+    data = {"description": args.description or "", "features": features,
+            "tolerances": tolerances}
+    projects._atomic_json(session.artifact("target.json"), data)
+    _ok(f"Objetivo estructurado guardado en {session.artifact('target.json')}")
+    return 0
+
+
+def cmd_assess(args) -> int:
+    def items(raw):
+        value = json.loads(raw) if raw else []
+        if not isinstance(value, list):
+            raise ValueError("matches/mismatches/suggestions deben ser listas JSON.")
+        return value
+    current_hash = design_hash(session.load_design())
+    verification_path = session.artifact("verification.json")
+    if not verification_path.exists():
+        raise ValueError("Corre `qpot verify` antes de registrar la evaluación visual.")
+    verified = json.loads(verification_path.read_text(encoding="utf-8"))
+    if verified.get("design_hash") != current_hash:
+        raise ValueError("El Design cambió desde el último verify; vuelve a verificar y mira el render nuevo.")
+    data = {
+        "render_inspected": bool(args.render_inspected), "score": float(args.score),
+        "design_hash": current_hash,
+        "matches": items(args.matches), "mismatches": items(args.mismatches),
+        "suggestions": items(args.suggestions), "assumptions": items(args.assumptions),
+    }
+    if not 0 <= data["score"] <= 10:
+        raise ValueError("--score debe estar entre 0 y 10.")
+    projects._atomic_json(session.artifact("agent_assessment.json"), data)
+    _ok(f"Evaluación visual guardada en {session.artifact('agent_assessment.json')}")
+    return 0
 
 
 def cmd_ui(args) -> int:
@@ -364,7 +534,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="qpot",
         description="Herramientas para diseñar/ver/resolver/exportar potenciales cuánticos "
-                    "(sin API). El Design vive en session/design.json.",
+                    "(sin API). El Design vive en el proyecto activo del workspace.",
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -429,6 +599,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("path")
     sp.set_defaults(func=cmd_set_image)
 
+    sp = sub.add_parser("analyze-image",
+                        help="Visión clásica: sugiere preset+params desde una foto (sin API)")
+    sp.add_argument("path")
+    sp.set_defaults(func=cmd_analyze_image)
+
     sub.add_parser("clean", help="Limpiar artefactos de la sesión actual").set_defaults(func=cmd_clean)
 
     sp = sub.add_parser("param", help="Definir/actualizar un parámetro nombrado (bloque parameters)")
@@ -446,11 +621,93 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--n-states", type=int, default=6, dest="n_states")
     sp.set_defaults(func=cmd_verify)
 
+    sp = sub.add_parser("sweep", help="Barrido paramétrico: E_n(parámetro) → sweep.csv/png")
+    sp.add_argument("name", help="Parámetro nombrado (bloque parameters) o arg de pieza con --piece")
+    sp.add_argument("--range", required=True, help="a:b:n  (p. ej. 0.1:0.5:9)")
+    sp.add_argument("--piece", type=int, default=None, help="Índice de pieza (barre su arg `name`)")
+    sp.add_argument("--n-states", type=int, default=4, dest="n_states")
+    sp.set_defaults(func=cmd_sweep)
+
+    sp = sub.add_parser(
+        "geometry-study",
+        help="Comparar geometrías simples contra una referencia detallada sin modificar Designs",
+    )
+    sp.add_argument("--reference", required=True, help="Design JSON de referencia detallada")
+    sp.add_argument("--reference-label", default="referencia")
+    sp.add_argument(
+        "--candidate", action="append", required=True,
+        help="ETIQUETA=design.json; repetir para cada simplificación",
+    )
+    sp.add_argument("--n-states", type=int, default=4, dest="n_states")
+    sp.add_argument("--tolerance-pct", type=float, default=3.0)
+    sp.add_argument("--measure-tolerance-pct", type=float, default=5.0)
+    sp.add_argument("--aspect-tolerance-pct", type=float, default=10.0)
+    sp.add_argument("--gap-tolerance-pct", type=float, default=10.0)
+    sp.add_argument("--gap-absolute-tolerance-meV", type=float, default=0.5)
+    sp.add_argument("--objective", choices=("levels", "levels-and-gaps"), default="levels")
+    sp.add_argument("--out", default=None, help="Ruta del reporte JSON; PNG usa el mismo nombre")
+    sp.set_defaults(func=cmd_geometry_study)
+
     sp = sub.add_parser("export", help="Exportar (csv/npz/m/mph/recipe)")
     sp.add_argument("--format", required=True, choices=session.EXPORT_FORMATS)
     sp.add_argument("--out", default=None)
     sp.add_argument("--n-states", type=int, default=6, dest="n_states")
+    sp.add_argument("--allow-fallback", action="store_true",
+                    help="Si falla .mph, generar receta/.m explícitamente")
     sp.set_defaults(func=cmd_export)
+
+    sub.add_parser("migrate", help="Migrar el Design activo a schema 1.0 con respaldo").set_defaults(
+        func=cmd_migrate)
+
+    sp = sub.add_parser("project", help="Gestionar proyectos del workspace")
+    project_sub = sp.add_subparsers(dest="project_cmd", required=True)
+    pp = project_sub.add_parser("new", help="Crear y activar un proyecto")
+    pp.add_argument("name")
+    pp.add_argument("--dim", type=int, choices=(1, 2), default=1)
+    pp.add_argument("--material", default="GaAs")
+    pp.set_defaults(func=cmd_project_new)
+    project_sub.add_parser("list", help="Listar proyectos").set_defaults(func=cmd_project_list)
+    pp = project_sub.add_parser("open", help="Activar un proyecto")
+    pp.add_argument("name")
+    pp.set_defaults(func=cmd_project_open)
+    pp = project_sub.add_parser("clone", help="Clonar y activar un proyecto")
+    pp.add_argument("source")
+    pp.add_argument("destination")
+    pp.set_defaults(func=cmd_project_clone)
+    pp = project_sub.add_parser("archive", help="Marcar un proyecto como archivado")
+    pp.add_argument("name")
+    pp.set_defaults(func=cmd_project_archive)
+    pp = project_sub.add_parser("export", help="Empaquetar un proyecto reproducible")
+    pp.add_argument("name")
+    pp.add_argument("--out", default=None)
+    pp.set_defaults(func=cmd_project_export)
+
+    sp = sub.add_parser("demo", help="Instalar un caso demostrativo reproducible")
+    demo_sub = sp.add_subparsers(dest="demo_cmd", required=True)
+    dp = demo_sub.add_parser("install", help="Copiar un demo al workspace y activarlo")
+    dp.add_argument("demo", choices=("tres-picos",))
+    dp.add_argument("--name", default=None, help="Nombre opcional del proyecto de destino")
+    dp.set_defaults(func=cmd_demo_install)
+
+    sp = sub.add_parser("comsol-remote-validate",
+                        help="Certificar el Design activo en COMSOL 5.6 por SSH")
+    sp.add_argument("--out", default="remote-comsol-results")
+    sp.set_defaults(func=cmd_comsol_remote)
+
+    sp = sub.add_parser("target", help="Definir objetivo estructurado del proyecto")
+    sp.add_argument("--description", default="")
+    sp.add_argument("--features", default="{}", help="Objeto JSON de features esperadas")
+    sp.add_argument("--tolerances", default="{}", help="Objeto JSON de tolerancias")
+    sp.set_defaults(func=cmd_target)
+
+    sp = sub.add_parser("assess", help="Registrar evaluación visual del agente")
+    sp.add_argument("--score", required=True, type=float)
+    sp.add_argument("--render-inspected", action="store_true", required=True)
+    sp.add_argument("--matches", default="[]")
+    sp.add_argument("--mismatches", default="[]")
+    sp.add_argument("--suggestions", default="[]")
+    sp.add_argument("--assumptions", default="[]")
+    sp.set_defaults(func=cmd_assess)
 
     sp = sub.add_parser("ui", help="Abrir visualizador local Streamlit (sin API)")
     sp.add_argument("--port", type=int, default=None)
@@ -474,7 +731,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return args.func(args)
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, FileExistsError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
     except (ValueError, KeyError, json.JSONDecodeError) as exc:

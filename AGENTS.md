@@ -1,5 +1,14 @@
 # AGENTS.md — Guía para el agente (Claude Code / ChatGPT / Codex / Antigravity)
 
+> **Contrato 1.0 (prevalece sobre referencias antiguas de este archivo):** el Design vive en
+> el proyecto activo de `workspace/`, no en una sesión global. Empieza con `qpot project new`
+> o `qpot project open`. Antes de diseñar, registra el objetivo con `qpot target`. Después de
+> mirar `render.png`, registra la evaluación mediante `qpot assess --render-inspected`.
+> `objective_ok` es un alias de `ready_to_export`: exige Design válido, solver convergido,
+> traducción COMSOL válida y coincidencia explícita con el objetivo. Que `verify` termine no
+> autoriza por sí solo a declarar el trabajo completo. Los Designs antiguos se migran con
+> `qpot migrate` y `QPOT_SESSION_DIR` solo se conserva para compatibilidad/automatización.
+
 > **Tú (el LLM) eres el cerebro de esta herramienta.** Este repositorio NO llama a ninguna
 > API de pago: el "Designer", el "Verifier" y el "Refiner" que antes eran llamadas a un
 > modelo ahora **los ejecutas tú** usando el CLI `qpot`. El estudiante te abre dentro del
@@ -13,12 +22,12 @@
 Una herramienta para pasar de **"descripción de un potencial cuántico" → simulación
 numérica completa** (Schrödinger 1D/2D por diferencias finitas) + exportación a COMSOL.
 
-- El **Design** es un JSON (`session/design.json`) con piezas que se **suman** para formar
+- El **Design** es el JSON del proyecto activo con piezas que se **suman** para formar
   V(x) o V(x,y). Es la **única fuente de verdad**. Coordenadas en **nm**, energías en **eV**.
 - El **solver** y los **exportadores** ya existen y son confiables (`core/`). Tú no los
   reescribes: los manejas por el CLI.
 - Para que el humano vea el potencial no hace falta servidor: `qpot render` da un PNG limpio y
-  `qpot render --html` una superficie 3D interactiva (`session/potential.html`) que se abre con
+  `qpot render --html` una superficie 3D interactiva (`potential.html`) que se abre con
   doble clic en cualquier navegador.
 
 ---
@@ -28,15 +37,24 @@ numérica completa** (Schrödinger 1D/2D por diferencias finitas) + exportación
 Este es el corazón del trabajo. Repítelo hasta que el potencial quede **bien descrito**:
 
 1. **Designer** — A partir del texto/imagen del estudiante, construye el Design con el CLI
-   (`qpot new`, `qpot from-preset`, `qpot add`, `qpot set`). Piensa primero la estructura
+   (`qpot project new`, `qpot target`, `qpot from-preset`, `qpot add`, `qpot set`). Piensa primero la estructura
    dominante, la escala (nm/eV) y el material; luego elige primitivas (ver §4 y §5).
 2. **Ver + Verify** — Corre `qpot verify`. Esto:
-   - renderiza el potencial a `session/render.png` → **ábrelo/léelo y MÍRALO**;
+   - renderiza el potencial a `render.png` dentro del proyecto → **ábrelo/léelo y MÍRALO**;
    - valida el Design (esquema, física, numérico);
    - resuelve Schrödinger y reporta convergencia, eigenvalores y nº de estados ligados;
+   - extrae **features cuantitativas** (`report.features`): nº de pozos, posiciones,
+     profundidades, simetría (1D) / centroides, `ring_like`, `radial_symmetry` (2D).
+     Úsalas para comparar con NÚMEROS contra el objetivo, no solo mirando el PNG;
+   - contrasta contra teoría (`report.analytic_benchmark`): compara E1−E0 numérico
+     con el modelo analítico que mejor aplique (ħω del fondo armónico o partícula en
+     caja). Desviación pequeña = solver validado; grande = anarmonicidad, pozo finito
+     o splitting túnel — **explícale al estudiante cuál es su caso**;
+   - los issues `AVISO:` (p. ej. paredes de confinamiento muy altas) NO bloquean
+     `objective_ok`: tú juzgas si son intencionales;
    - si hay imagen fuente (`qpot set-image`), te pide compararla con el render.
-   Da una señal objetiva `objective_ok`. **La calificación final (0-10) la pones tú** mirando
-   el PNG contra el objetivo (criterios en §6).
+   Registra la calificación final con `qpot assess --score N --render-inspected ...`; solo
+   entonces `target_match` puede aprobar la comparación visual.
 3. **Refiner** — Si no coincide, ajusta piezas (`qpot set`, `qpot add`, `qpot remove`) y
    vuelve a `verify`. Conserva lo que ya estaba bien; corrige solo lo que falla.
 4. Cuando coincida y `objective_ok` sea true → **exporta** (`qpot export`) y resume al
@@ -55,12 +73,13 @@ todo el loop secuencialmente.
 
 ## 2. Comandos del CLI (`python -m qpot <cmd>`)
 
-Todo opera sobre `session/design.json`. Salida: las acciones imprimen un mensaje; las
+Todo opera sobre el Design del proyecto activo. Salida: las acciones imprimen un mensaje; las
 consultas (`state`, `describe`, `solve`, `verify`, `validate`) imprimen JSON.
 
 | Comando | Qué hace |
 |---|---|
-| `new --dim {1,2} [--material GaAs] [--L nm] [--N pts]` | Crea sesión nueva (Design vacío). |
+| `project new <nombre> --dim {1,2} [--material GaAs]` | Crea y activa un proyecto. |
+| `target ...` · `assess ...` | Registra objetivo y evaluación visual verificable. |
 | `state` | Imprime el Design actual (JSON). |
 | `describe` | Contrato de parámetros: piezas, roles, tunables, supuestos. |
 | `render [--html] [--open]` | Evalúa V → `render.png` (2D = superficie 3D + vista superior). **Léelo para VER el potencial.** `--html` añade una vista 3D interactiva; `--open` la abre en el navegador. |
@@ -73,9 +92,12 @@ consultas (`state`, `describe`, `solve`, `verify`, `validate`) imprimen JSON.
 | `param <nombre> <valor>` | Define/actualiza un parámetro nombrado (bloque `parameters`). Sin valor → lo borra. |
 | `from-preset <name> --dim {1,2} [--params '{json}']` | Carga un preset del catálogo. |
 | `set-image <path>` | Registra imagen fuente (`session/source_image.*`). Léela tú. |
+| `analyze-image <path>` | Visión clásica (sin API): detecta blobs/anillos/simetría y **sugiere** preset + params de arranque (JSON). Registra la imagen como fuente. Tú decides aplicarlo con `from-preset`. |
 | `validate` | Valida el Design (sin resolver). |
 | `solve [--n-states N]` | Resuelve; guarda `wavefunctions.png`, `eigenvalues.csv`, `result.json`. |
 | `verify [--n-states N]` | **El loop**: render + validate + solve + chequeo de zonas solapadas (`zone_overlap`) → reporte objetivo. |
+| `sweep <param> --range=a:b:n [--piece IDX] [--n-states N]` | **Barrido paramétrico** E_n(parámetro), la gráfica clásica de análisis (estilo COMSOL, pero local). Barre un parámetro nombrado o (con `--piece`) un arg de una pieza; guarda `sweep.csv` + `sweep.png`. Usa `--range=-0.5:-0.1:5` (con `=`) para valores negativos. No modifica el Design. |
+| `geometry-study --reference ref.json --candidate nombre=design.json [...]` | Compara geometrías controladas sin modificar Designs: área/longitud, aspecto, E_n, gaps, P_QD y S_E. Distingue si una simplificación sirve para niveles o también para splittings. |
 | `export --format {csv,npz,m,mph,recipe} [--out path] [--n-states N]` | Exporta. |
 
 `set` parsea el valor como JSON si puede: `qpot set 0 value -0.30`, `qpot set 1 sigma 8`,
@@ -119,7 +141,8 @@ electrón por dominio) + Estudio de Valor propio:
 - `--format recipe` → receta markdown paso a paso (siempre funciona, sin dependencias).
 - `--format m` → script LiveLink (necesita MATLAB+COMSOL para correrlo).
 - `--format mph` → **archivo .mph nativo** que abre directo en COMSOL **sin MATLAB** (requiere
-  `MPh` + COMSOL; ver versiones en requirements.txt). Si MPh no está, cae a la receta.
+  `MPh` + COMSOL; ver versiones en `pyproject.toml`). Si falla, se bloquea; la receta solo se
+  genera cuando se solicita expresamente `--allow-fallback`.
 
 > ⚠ **Antes de tocar `core/exporter_mph.py` o el flujo del `.mph`, LEE
 > [COMSOL_MPH.md](COMSOL_MPH.md).** Tiene la guía definitiva (matriz Java/MPh/jpype, estructura
@@ -215,7 +238,7 @@ fundamentalmente distinto. Reporta `matches`, `mismatches` y `suggestions` concr
 "subir sigma de pieza 1 a 8 nm"), y aplícalas en la siguiente iteración.
 
 **Señales objetivas** que da `qpot verify` (no las ignores): `validation.issues` debe estar
-vacío; `solver.convergence_ok` debe ser true; `solver.n_bound_states` > 0 si esperas estados
+vacío; `solver_valid` debe ser true; `solver.n_bound_states` > 0 si esperas estados
 ligados (si es 0, el pozo es muy poco profundo/angosto o el dominio está mal).
 
 ---
@@ -224,8 +247,8 @@ ligados (si es 0, el pozo es muy poco profundo/angosto o el dominio está mal).
 
 - `qpot export --format csv` → eigenvalores. `--format npz` → funciones de onda (NumPy).
 - `qpot export --format m` → script MATLAB LiveLink. `--format recipe` → receta paso a paso.
-- `qpot export --format mph` → `.mph` nativo (requiere `pip install MPh` + COMSOL); si no está,
-  **cae con gracia** a generar el `.m` y te avisa.
+- `qpot export --format mph` → `.mph` nativo estricto; si falla no sustituye el entregable.
+  Usa `--allow-fallback` para solicitar explícitamente receta o `.m`.
 
 ---
 

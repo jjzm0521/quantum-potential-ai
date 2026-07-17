@@ -26,13 +26,18 @@ runs/
 
 # Sesión de trabajo del CLI qpot (Design + renders + resultados)
 session/
+workspace/
 
 # Outputs generados
+build/
+dist/
+*.egg-info/
 *.mph
 *.npz
 *.csv
 outputs/
 exports/
+remote-comsol-results/
 
 # IDE
 .vscode/

@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0",
+  "dim": 2,
+  "material": "GaAs",
+  "domain": {"L": 100.0, "N": 72},
+  "parameters": {
+    "R": {"value": 18.3732798193, "unit": "nm", "dtype": "float", "kind": "length", "role": "radio ajustado a igual area"},
+    "V0": {"value": -0.2, "unit": "eV", "dtype": "float", "kind": "energy", "role": "profundidad común"}
+  },
+  "pieces": [
+    {
+      "op": "mask",
+      "label": "disco equivalente",
+      "region": {"op": "disk", "args": {"center": [0, 0], "radius": "R"}},
+      "value": "V0"
+    }
+  ]
+}

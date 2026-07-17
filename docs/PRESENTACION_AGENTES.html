@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quantum Potential AI — Agentes de IA aplicados a simulación cuántica</title>
+<style>
+  :root{
+    --ink:#1a1f2e; --ink-soft:#4a5268; --ink-faint:#8890a4;
+    --bg:#fbfaf7; --card:#ffffff; --line:#e4e1d8;
+    --accent:#4338ca; --accent-soft:#eef0fe;
+    --teal:#0e7c6b; --teal-soft:#e6f4f1;
+    --amber:#b45309; --amber-soft:#fdf3e3;
+    --rose:#be123c; --rose-soft:#fdeef1;
+    --mono:'SF Mono',ui-monospace,'Cascadia Code',Consolas,monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:Georgia,'Times New Roman',serif;
+    background:var(--bg); color:var(--ink);
+    line-height:1.65; font-size:17px;
+  }
+  .sans{font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif}
+  .wrap{max-width:900px;margin:0 auto;padding:0 28px}
+
+  /* ── Portada ── */
+  header{
+    background:linear-gradient(160deg,#1a1f3a 0%,#2d2a5e 55%,#4338ca 130%);
+    color:#fff;padding:72px 0 56px;
+  }
+  header .kicker{font-family:var(--mono);font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:#a5b4fc;margin-bottom:18px}
+  header h1{font-size:44px;line-height:1.12;font-weight:700;letter-spacing:-.01em;max-width:760px}
+  header .sub{font-size:20px;color:#c7d2fe;margin-top:18px;max-width:700px;font-style:italic}
+  header .meta{font-family:var(--mono);font-size:13px;color:#818cf8;margin-top:30px}
+
+  /* ── Tabla de contenidos ── */
+  nav{background:var(--card);border-bottom:1px solid var(--line);padding:20px 0}
+  nav ol{list-style:none;display:flex;flex-wrap:wrap;gap:6px 22px;font-size:14px}
+  nav a{color:var(--accent);text-decoration:none;font-family:-apple-system,'Segoe UI',sans-serif}
+  nav a:hover{text-decoration:underline}
+  nav .n{color:var(--ink-faint);font-family:var(--mono);font-size:12px;margin-right:4px}
+
+  /* ── Secciones ── */
+  section{padding:52px 0 8px}
+  h2{
+    font-family:-apple-system,'Segoe UI',Helvetica,sans-serif;
+    font-size:29px;font-weight:750;letter-spacing:-.015em;margin-bottom:6px;
+  }
+  h2 .num{color:var(--accent);font-family:var(--mono);font-size:20px;font-weight:600;margin-right:10px}
+  h3{font-family:-apple-system,'Segoe UI',sans-serif;font-size:19px;font-weight:700;margin:34px 0 10px}
+  .lede{font-size:19px;color:var(--ink-soft);font-style:italic;margin-bottom:22px}
+  p{margin-bottom:16px;max-width:76ch}
+  ul,ol.list{margin:0 0 16px 26px}
+  li{margin-bottom:7px;max-width:72ch}
+  strong{font-weight:700}
+  em{font-style:italic}
+  code{font-family:var(--mono);font-size:.85em;background:var(--accent-soft);padding:2px 6px;border-radius:4px;color:#3730a3}
+  pre{
+    font-family:var(--mono);font-size:13.5px;line-height:1.6;
+    background:#1a1f2e;color:#d6dcf0;padding:18px 22px;border-radius:10px;
+    overflow-x:auto;margin:14px 0 22px;
+  }
+  pre .c{color:#7a86a8}
+  hr.sep{border:none;border-top:1px solid var(--line);margin:44px 0 0}
+
+  /* ── Cards y grids ── */
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:20px 0}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:20px 0}
+  @media(max-width:760px){.grid2,.grid3{grid-template-columns:1fr}}
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:20px 22px;font-family:-apple-system,'Segoe UI',sans-serif;font-size:15px;line-height:1.55;
+  }
+  .card h4{font-size:15.5px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+  .card p{font-size:14.5px;color:var(--ink-soft);margin-bottom:8px}
+  .card p:last-child{margin-bottom:0}
+  .tag{
+    display:inline-block;font-family:var(--mono);font-size:11px;letter-spacing:.08em;
+    text-transform:uppercase;padding:3px 9px;border-radius:20px;font-weight:600;
+  }
+  .tag.ind{background:var(--accent-soft);color:var(--accent)}
+  .tag.teal{background:var(--teal-soft);color:var(--teal)}
+  .tag.amber{background:var(--amber-soft);color:var(--amber)}
+  .tag.rose{background:var(--rose-soft);color:var(--rose)}
+
+  /* ── Tablas ── */
+  .tblwrap{overflow-x:auto;margin:18px 0 24px}
+  table{border-collapse:collapse;width:100%;font-family:-apple-system,'Segoe UI',sans-serif;font-size:14.5px;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  th{background:#f2f0ea;text-align:left;padding:11px 15px;font-weight:700;font-size:13px;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-soft);border-bottom:2px solid var(--line)}
+  td{padding:11px 15px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  td.ok{color:var(--teal);font-weight:600}
+  td.bad{color:var(--rose)}
+
+  /* ── Callouts ── */
+  .callout{
+    border-left:4px solid var(--accent);background:var(--accent-soft);
+    padding:16px 20px;border-radius:0 10px 10px 0;margin:20px 0;
+    font-family:-apple-system,'Segoe UI',sans-serif;font-size:15px;
+  }
+  .callout.teal{border-color:var(--teal);background:var(--teal-soft)}
+  .callout.amber{border-color:var(--amber);background:var(--amber-soft)}
+  .callout b{display:block;margin-bottom:4px}
+
+  /* ── Figuras ── */
+  figure{margin:26px 0 30px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:26px 22px 14px;overflow-x:auto}
+  figcaption{font-family:-apple-system,'Segoe UI',sans-serif;font-size:13.5px;color:var(--ink-faint);text-align:center;margin-top:12px;font-style:italic}
+  figure svg{display:block;margin:0 auto;max-width:100%;height:auto}
+
+  /* ── Timeline ── */
+  .timeline{position:relative;margin:26px 0;padding-left:34px}
+  .timeline::before{content:'';position:absolute;left:10px;top:6px;bottom:6px;width:2px;background:var(--line)}
+  .tl-item{position:relative;margin-bottom:26px;font-family:-apple-system,'Segoe UI',sans-serif}
+  .tl-item::before{content:'';position:absolute;left:-30px;top:6px;width:11px;height:11px;border-radius:50%;background:var(--accent);border:2.5px solid var(--bg)}
+  .tl-item h4{font-size:16px;font-weight:700;margin-bottom:4px}
+  .tl-item p{font-size:14.5px;color:var(--ink-soft);margin-bottom:4px}
+  .tl-item .when{font-family:var(--mono);font-size:11.5px;color:var(--ink-faint);letter-spacing:.06em;text-transform:uppercase}
+
+  footer{padding:44px 0 60px;color:var(--ink-faint);font-family:-apple-system,'Segoe UI',sans-serif;font-size:13.5px;border-top:1px solid var(--line);margin-top:56px}
+
+  @media print{
+    header{background:#2d2a5e!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    nav{display:none}
+    section{padding:28px 0 4px;break-inside:avoid-page}
+    figure,.card,pre{break-inside:avoid}
+    body{font-size:12.5pt}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="kicker sans">Quantum Potential AI · Informe de desarrollo y marco conceptual</div>
+    <h1>Un agente de IA como cerebro de una herramienta de simulación cuántica</h1>
+    <p class="sub sans">De la descripción en lenguaje natural (o una imagen AFM) a la ecuación de Schrödinger resuelta y un modelo COMSOL listo para abrir — sin pagar ninguna API.</p>
+    <div class="meta">Juan José Zapata Moreno · Julio 2026 · repo: quantum-potential-ai</div>
+  </div>
+</header>
+
+<nav class="sans">
+  <div class="wrap">
+    <ol>
+      <li><a href="#s1"><span class="n">01</span>Qué es el proyecto</a></li>
+      <li><a href="#s2"><span class="n">02</span>Qué es un agente de IA</a></li>
+      <li><a href="#s3"><span class="n">03</span>Conceptos frontera</a></li>
+      <li><a href="#sart"><span class="n">04</span>Estado del arte e investigación</a></li>
+      <li><a href="#s4"><span class="n">05</span>Agente vs. regresión simbólica</a></li>
+      <li><a href="#s5"><span class="n">06</span>Arquitectura y decisiones</a></li>
+      <li><a href="#s6"><span class="n">07</span>El camino a COMSOL</a></li>
+      <li><a href="#s7"><span class="n">08</span>Fundamento físico-numérico</a></li>
+      <li><a href="#s8"><span class="n">09</span>Estado y avance</a></li>
+    </ol>
+  </div>
+</nav>
+
+<!-- ═══════════════ 01 ═══════════════ -->
+<section id="s1">
+  <div class="wrap">
+    <h2><span class="num">01</span>Qué es el proyecto</h2>
+    <p class="lede">Una herramienta que convierte la <em>intención</em> de un físico en una simulación numérica completa y reproducible.</p>
+
+    <p>El usuario describe un potencial cuántico — en texto (<em>"pozo finito de GaAs de 30 nm y 250 meV"</em>) o subiendo una imagen (un esquema, una micrografía AFM/SEM) — y el sistema produce:</p>
+    <ul>
+      <li>Un <strong>diseño paramétrico formal</strong> del potencial V(x) o V(x,y) en un DSL JSON auditable.</li>
+      <li>La <strong>solución numérica de la ecuación de Schrödinger</strong> de masa efectiva (eigenvalores, funciones de onda, densidades |ψ|²) por diferencias finitas.</li>
+      <li>La <strong>exportación a COMSOL Multiphysics</strong> por tres vías: un archivo <code>.mph</code> nativo que abre directo, un script MATLAB LiveLink <code>.m</code>, y una receta paso a paso en markdown.</li>
+    </ul>
+
+    <p>La pieza distintiva no es el solver (diferencias finitas es un método estándar): es <strong>quién construye el diseño</strong>. En lugar de un formulario con sliders o de un algoritmo de ajuste, el diseño lo construye un <strong>agente de IA</strong> — el mismo LLM que el estudiante ya tiene abierto (Claude Code, Codex, etc.) — que opera la herramienta mediante un CLI, <em>mira</em> el resultado renderizado, lo critica y lo refina en un ciclo cerrado hasta que coincide con la intención del usuario.</p>
+
+    <div class="callout"><b>Tesis del proyecto</b>
+    Un problema de "descripción → modelo físico" no es un problema de ajuste de curvas: es un problema de <em>diseño</em> que requiere conocimiento físico previo, razonamiento geométrico y verificación visual. Esa combinación es exactamente lo que un agente LLM con herramientas sabe hacer, y lo que ningún método clásico de regresión ofrece.</div>
+  </div>
+</section>
+<div class="wrap"><hr class="sep"></div>
+
+<!-- ═══════════════ 02 ═══════════════ -->
+<section id="s2">
+  <div class="wrap">
+    <h2><span class="num">02</span>¿Qué es un agente de IA?</h2>
+    <p class="lede">Un modelo de lenguaje deja de ser un chatbot y se vuelve un agente cuando puede <em>actuar</em> sobre un entorno, <em>observar</em> el resultado y decidir su siguiente paso.</p>
+
+    <p>Un LLM "a secas" es una función: texto entra, texto sale. No tiene memoria del mundo, no puede ejecutar nada, y si se equivoca no se entera. Un <strong>agente</strong> envuelve ese modelo en un <strong>bucle de percepción–acción</strong>:</p>
+
+    <figure>
+      <svg viewBox="0 0 860 300" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,'Segoe UI',sans-serif">
+        <defs>
+          <marker id="arr" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 z" fill="#4338ca"/></marker>
+          <marker id="arrg" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 z" fill="#0e7c6b"/></marker>
+        </defs>
+        <!-- Objetivo -->
+        <rect x="20" y="110" width="150" height="80" rx="12" fill="#fdf3e3" stroke="#b45309" stroke-width="1.5"/>
+        <text x="95" y="143" text-anchor="middle" font-size="14" font-weight="700" fill="#b45309">Objetivo</text>
+        <text x="95" y="163" text-anchor="middle" font-size="11.5" fill="#7c5a1e">texto / imagen</text>
+        <text x="95" y="178" text-anchor="middle" font-size="11.5" fill="#7c5a1e">del usuario</text>
+        <!-- LLM -->
+        <rect x="250" y="90" width="200" height="120" rx="14" fill="#eef0fe" stroke="#4338ca" stroke-width="2"/>
+        <text x="350" y="130" text-anchor="middle" font-size="16" font-weight="800" fill="#3730a3">LLM (razona)</text>
+        <text x="350" y="152" text-anchor="middle" font-size="12" fill="#4a5268">planifica · decide</text>
+        <text x="350" y="170" text-anchor="middle" font-size="12" fill="#4a5268">la siguiente acción</text>
+        <text x="350" y="188" text-anchor="middle" font-size="12" fill="#4a5268">o declara "listo"</text>
+        <!-- Entorno -->
+        <rect x="560" y="90" width="200" height="120" rx="14" fill="#e6f4f1" stroke="#0e7c6b" stroke-width="2"/>
+        <text x="660" y="130" text-anchor="middle" font-size="16" font-weight="800" fill="#0e7c6b">Entorno</text>
+        <text x="660" y="152" text-anchor="middle" font-size="12" fill="#4a5268">CLI qpot · archivos</text>
+        <text x="660" y="170" text-anchor="middle" font-size="12" fill="#4a5268">solver · renders PNG</text>
+        <text x="660" y="188" text-anchor="middle" font-size="12" fill="#4a5268">validadores</text>
+        <!-- flechas -->
+        <line x1="170" y1="150" x2="243" y2="150" stroke="#b45309" stroke-width="2" marker-end="url(#arr)"/>
+        <path d="M450,120 C500,120 510,120 553,120" fill="none" stroke="#4338ca" stroke-width="2.5" marker-end="url(#arr)"/>
+        <text x="502" y="106" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4338ca">acción (tool call)</text>
+        <path d="M560,180 C510,180 500,180 457,180" fill="none" stroke="#0e7c6b" stroke-width="2.5" marker-end="url(#arrg)"/>
+        <text x="508" y="202" text-anchor="middle" font-size="12.5" font-weight="700" fill="#0e7c6b">observación (resultado)</text>
+        <!-- loop -->
+        <path d="M350,210 C350,262 660,262 660,213" fill="none" stroke="#8890a4" stroke-width="1.5" stroke-dasharray="5 4"/>
+        <text x="505" y="280" text-anchor="middle" font-size="12" fill="#8890a4" font-style="italic">el bucle se repite hasta cumplir el objetivo</text>
+        <!-- salida -->
+        <line x1="350" y1="90" x2="350" y2="48" stroke="#4338ca" stroke-width="2" marker-end="url(#arr)"/>
+        <text x="350" y="34" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4338ca">resultado final + explicación</text>
+      </svg>
+      <figcaption>Fig. 1 — El bucle agéntico: razonar → actuar → observar → volver a razonar. La diferencia con un chatbot es la flecha de vuelta.</figcaption>
+    </figure>
+
+    <p>Formalmente, un agente combina cuatro ingredientes:</p>
+    <div class="grid2">
+      <div class="card"><h4><span class="tag ind">1</span> Modelo</h4><p>Un LLM (aquí, el de Claude Code) que aporta razonamiento, conocimiento previo — incluida la física de heteroestructuras — y visión multimodal para leer imágenes AFM y renders.</p></div>
+      <div class="card"><h4><span class="tag ind">2</span> Herramientas (tools)</h4><p>Acciones ejecutables con contrato definido: correr un comando, leer/escribir archivos, ver una imagen. Son las "manos" del agente. En este proyecto la herramienta central es el CLI <code>qpot</code>.</p></div>
+      <div class="card"><h4><span class="tag ind">3</span> Bucle con retroalimentación</h4><p>Cada acción devuelve una observación (JSON del solver, un PNG) que entra al contexto del modelo. El agente puede <em>equivocarse y corregirse</em> — eso es lo que lo hace robusto.</p></div>
+      <div class="card"><h4><span class="tag ind">4</span> Contexto e instrucciones</h4><p>Documentos que le dicen al agente qué rol tiene y cómo operar el entorno. Aquí: <code>AGENTS.md</code> (el manual del agente), <code>PRIMITIVES.md</code> (el contrato del DSL) y <code>CLAUDE.md</code>.</p></div>
+    </div>
+
+    <p>La intuición clave para la presentación: <strong>el valor del agente no está en que "sabe la respuesta", sino en que puede verificarla</strong>. Un LLM sin herramientas diría "un pozo de 30 nm en GaAs tiene ~3 estados ligados" y podría estar mal. El agente construye el pozo, corre el solver, cuenta los estados ligados en el resultado numérico, y si el render no coincide con lo pedido, lo arregla. La alucinación se filtra contra la realidad del entorno.</p>
+  </div>
+</section>
+<div class="wrap"><hr class="sep"></div>
+
+<!-- ═══════════════ 03 ═══════════════ -->
+<section id="s3">
+  <div class="wrap">
+    <h2><span class="num">03</span>Conceptos frontera para entender agentes</h2>
+    <p class="lede">El vocabulario del estado del arte (2025–2026), y qué papel juega cada pieza en este proyecto.</p>
+
+    <div class="grid2">
+      <div class="card">
+        <h4><span class="tag ind">API</span> API de un LLM</h4>
+        <p>Acceso programático al modelo por internet: mandas mensajes, pagas por token. Es como se construyen productos de IA "embebida" — y fue la <strong>primera versión</strong> de este proyecto (pipeline con la API de Anthropic, hoy archivado en <code>legacy/</code>).</p>
+        <p><strong>Aquí:</strong> se eliminó. El cerebro es el agente que el estudiante ya tiene abierto; costo marginal cero.</p>
+      </div>
+      <div class="card">
+        <h4><span class="tag ind">Harness</span> Harness (arnés)</h4>
+        <p>La infraestructura que envuelve al modelo y ejecuta el bucle: gestiona el contexto, despacha las tool calls, aplica permisos, reintenta errores. Claude Code <em>es</em> un harness. Sin harness, un LLM no puede tocar nada.</p>
+        <p><strong>Aquí:</strong> el proyecto no implementa su propio harness — se "monta" sobre el que el usuario ya tiene. Además, cada diseño puede llevar una ficha <code>harnex</code> (identidad, propósito, justificación) que lo hace auditable.</p>
+      </div>
+      <div class="card">
+        <h4><span class="tag teal">Tools</span> Herramientas</h4>
+        <p>Funciones con esquema tipado que el modelo puede invocar: <code>Bash</code>, <code>Read</code> (¡incluye ver imágenes!), <code>Write</code>. El modelo emite la llamada; el harness la ejecuta y devuelve el resultado.</p>
+        <p><strong>Aquí:</strong> el agente usa <code>Bash</code> para operar <code>qpot</code> y <code>Read</code> para mirar <code>render.png</code> — la visión multimodal cierra el loop de verificación.</p>
+      </div>
+      <div class="card">
+        <h4><span class="tag teal">CLI</span> CLI como interfaz agente↔programa</h4>
+        <p>Hallazgo central del diseño: <strong>una interfaz de línea de comandos bien documentada es la API universal para agentes</strong>. Cualquier LLM que sepa usar una terminal puede operar la herramienta — sin SDK, sin integración por proveedor.</p>
+        <p><strong>Aquí:</strong> <code>python -m qpot {new, add, set, render, verify, export…}</code>. Las consultas imprimen JSON (legible por máquina); las acciones, mensajes cortos.</p>
+      </div>
+      <div class="card">
+        <h4><span class="tag amber">Skills</span> Skills / slash-commands</h4>
+        <p>Procedimientos empaquetados que se cargan al contexto bajo demanda: "cuando te pidan X, sigue estos pasos". Extienden al agente sin reentrenar nada — es <em>programación por documentación</em>.</p>
+        <p><strong>Aquí:</strong> el comando <code>/potential</code> (en <code>.claude/commands/</code>) arranca el flujo completo Designer→Verify→Refiner de una sola invocación.</p>
+      </div>
+      <div class="card">
+        <h4><span class="tag amber">MCP</span> Model Context Protocol</h4>
+        <p>Estándar abierto (Anthropic, 2024; hoy adoptado por todo el ecosistema) para conectar agentes a servicios externos: un servidor MCP publica herramientas y el agente las descubre y usa. Es el "USB de los agentes".</p>
+        <p><strong>Aquí:</strong> no fue necesario — el CLI cumple el mismo papel localmente. Sería el camino natural si la herramienta se ofreciera como servicio remoto (p. ej. un <code>qpot-mcp</code> para usar desde claude.ai).</p>
+      </div>
+      <div class="card">
+        <h4><span class="tag rose">Ctx</span> Contexto y grounding</h4>
+        <p>El agente solo "sabe" lo que cabe en su ventana de contexto. Por eso los proyectos agénticos serios versionan archivos de contexto (<code>AGENTS.md</code> es un estándar emergente multi-cliente) y anclan cada afirmación a evidencia observable (<em>grounding</em>).</p>
+        <p><strong>Aquí:</strong> la regla de oro del manual: <em>"nunca declares que un potencial está bien sin haber corrido <code>qpot verify</code> y mirado el PNG"</em>.</p>
+      </div>
+      <div class="card">
+        <h4><span class="tag rose">Multi</span> Subagentes / multi-agente</h4>
+        <p>Un agente puede delegar roles a agentes hijos con contexto propio (patrón orquestador–trabajadores). Útil para paralelizar o aislar criterios (el que verifica no es el que diseñó).</p>
+        <p><strong>Aquí:</strong> los roles Designer / Verifier / Refiner pueden correr como subagentes en Claude Code, o secuencialmente en uno solo. El rol es del <em>flujo</em>, no del proceso.</p>
+      </div>
+    </div>
+
+    <h3>Medios donde se conecta un agente</h3>
+    <p>Un mismo modelo puede operar por distintos "medios", con distintos costos y capacidades. Este proyecto eligió deliberadamente la fila 2:</p>
+    <div class="tblwrap"><table>
+      <tr><th>Medio</th><th>Ejemplo</th><th>Costo</th><th>Acceso al entorno</th></tr>
+      <tr><td><strong>API embebida</strong> en la app</td><td>pipeline <code>legacy/</code> con API Anthropic</td><td>por token, recurrente</td><td>solo lo que la app le programe</td></tr>
+      <tr><td><strong>Agente de terminal</strong> sobre el repo</td><td class="ok">Claude Code / Codex + CLI qpot ← elegido</td><td class="ok">$0 marginal (suscripción ya existente)</td><td class="ok">total: shell, archivos, imágenes</td></tr>
+      <tr><td><strong>MCP remoto</strong></td><td>servidor qpot-mcp hipotético</td><td>hosting</td><td>las tools que el servidor exponga</td></tr>
+      <tr><td><strong>Computer use</strong> (GUI)</td><td>agente manejando COMSOL con mouse</td><td>alto (lento, frágil)</td><td>cualquier app, sin API</td></tr>
+    </table></div>
+  </div>
+</section>
+<div class="wrap"><hr class="sep"></div>
+
+<!-- ═══════════════ 04 · ESTADO DEL ARTE ═══════════════ -->
+<section id="sart">
+  <div class="wrap">
+    <h2><span class="num">04</span>Estado del arte e investigación en agentes de IA</h2>
+    <p class="lede">De dónde viene la idea, qué dice la literatura, y qué principios de frontera aplica (o anticipa) este proyecto.</p>
+
+    <h3>Breve historia: cómo llegamos aquí</h3>
+    <div class="timeline">
+      <div class="tl-item">
+        <div class="when">2022 — razonar en voz alta</div>
+        <h4>Chain-of-Thought y ReAct</h4>
+        <p>Wei et al. muestran que pedir al modelo razonar paso a paso mejora drásticamente su desempeño (<em>Chain-of-Thought</em>). Yao et al. formalizan en <strong>ReAct</strong> el patrón que define a los agentes modernos: intercalar <em>razonamiento</em> (pensar qué hacer) con <em>acciones</em> (consultar herramientas) y <em>observaciones</em> (leer el resultado). El bucle de la Fig. 1 es, en esencia, ReAct.</p>
+      </div>
+      <div class="tl-item">
+        <div class="when">2023 — herramientas y autocrítica</div>
+        <h4>Toolformer, function calling, Reflexion, Voyager… y el fracaso de AutoGPT</h4>
+        <p><strong>Toolformer</strong> (Schick et al.) demuestra que un LLM puede aprender a invocar APIs; los proveedores lo estandarizan como <em>function calling</em> con esquemas tipados. <strong>Reflexion</strong> (Shinn et al.) añade autocrítica verbal: el agente analiza su propio fallo y reintenta mejor — el germen del rol Verifier. <strong>Voyager</strong> (Wang et al.) introduce la <em>biblioteca de skills</em>: procedimientos aprendidos que se guardan y reutilizan (antecedente directo de los skills/slash-commands actuales). Y el hype de <strong>AutoGPT/BabyAGI</strong> — autonomía total sin verificación — fracasa en tareas reales: lección fundacional de que autonomía sin oráculo diverge.</p>
+      </div>
+      <div class="tl-item">
+        <div class="when">2024 — el agente toca el mundo real</div>
+        <h4>SWE-agent, computer use, MCP</h4>
+        <p><strong>SWE-agent</strong> (Yang et al.) formula la idea de <em>Agent-Computer Interface</em>: el rendimiento del agente depende tanto de la interfaz que se le da como del modelo (justificación directa del diseño del CLI <code>qpot</code>). Anthropic lanza <em>computer use</em> (el agente maneja pantalla/mouse) y publica el <strong>Model Context Protocol</strong>, que en 2025 adoptan OpenAI, Google y Microsoft como estándar de conexión agente↔servicios.</p>
+      </div>
+      <div class="tl-item">
+        <div class="when">2025–2026 — harnesses maduros y razonamiento en inferencia</div>
+        <h4>Agentes de código, test-time compute, tareas largas</h4>
+        <p>Los harnesses de terminal (Claude Code, Codex CLI) se vuelven la forma dominante de agente productivo; <code>AGENTS.md</code> emerge como estándar de facto multi-cliente para instruirlos. Los <strong>modelos razonadores</strong> muestran que "pensar más tiempo" en inferencia (test-time compute) escala el desempeño en problemas difíciles. Y la organización METR mide que <strong>la longitud de tarea que un agente completa con 50% de éxito se duplica aproximadamente cada 7 meses</strong> — la métrica de progreso agéntico más citada de la frontera.</p>
+      </div>
+    </div>
+
+    <h3>Workflows vs. agentes: los patrones canónicos</h3>
+    <p>La guía de diseño más influyente (Anthropic, <em>Building Effective Agents</em>, 2024) distingue <strong>workflows</strong> — flujos con pasos predefinidos por código — de <strong>agentes</strong> — donde el LLM decide dinámicamente sus pasos — y cataloga los patrones intermedios:</p>
+    <div class="grid3">
+      <div class="card"><h4><span class="tag ind">P1</span> Prompt chaining</h4><p>Salida de un paso alimenta al siguiente, en secuencia fija. El pipeline <code>legacy/</code> de este proyecto era exactamente esto.</p></div>
+      <div class="card"><h4><span class="tag ind">P2</span> Routing</h4><p>Un clasificador dirige la entrada al flujo especializado adecuado (¿es 1D o 2D? ¿texto o imagen?).</p></div>
+      <div class="card"><h4><span class="tag ind">P3</span> Orchestrator–workers</h4><p>Un agente central delega subtareas a agentes hijos con contexto propio. En Claude Code: subagentes Designer/Verifier.</p></div>
+      <div class="card"><h4><span class="tag teal">P4</span> Evaluator–optimizer</h4><p>Un rol genera, otro evalúa contra criterios y devuelve feedback; se itera. <strong>Es el patrón de este proyecto</strong>: Designer genera, <code>qpot verify</code> + Verifier evalúan, Refiner optimiza.</p></div>
+      <div class="card"><h4><span class="tag teal">P5</span> Agente autónomo</h4><p>Loop abierto: el modelo planifica, actúa y decide cuándo terminar. Es lo que hace el agente sobre el repo, con el humano como aceptación final.</p></div>
+      <div class="card"><h4><span class="tag amber">★</span> Principio rector</h4><p><em>"Usa el patrón más simple que funcione."</em> La complejidad agéntica solo se justifica cuando la tarea es abierta — como interpretar una foto AFM ambigua.</p></div>
+    </div>
+
+    <h3>El problema central: errores compuestos y el oráculo</h3>
+    <p>El hallazgo más importante de la investigación agéntica es aritmético. Si cada paso del agente acierta con probabilidad p, una tarea de n pasos sin verificación acierta con p<sup>n</sup>: con 90% por paso y 20 pasos, <strong>solo 12% de éxito total</strong>. Los agentes que funcionan en producción rompen esa aritmética de una sola forma: <strong>verificación externa barata en cada iteración</strong> — el compilador para el código, los tests para el software, y aquí el validador + solver + render para la física.</p>
+
+    <div class="callout"><b>Regla de la frontera: "los agentes funcionan donde verificar es barato"</b>
+    Programación despegó primero porque tiene oráculos gratis (compilar, testear). Este proyecto aplica la misma receta a la física computacional: construimos el oráculo (<code>qpot verify</code>: esquema → rangos físicos → convergencia → estados ligados → render visual) <em>antes</em> de soltar al agente. No es un detalle de implementación: es la razón estructural por la que el sistema converge en pocas iteraciones en lugar de divergir como AutoGPT.</div>
+
+    <h3>Cómo se mide un agente: benchmarks</h3>
+    <div class="tblwrap"><table>
+      <tr><th>Benchmark</th><th>Qué mide</th><th>Relevancia aquí</th></tr>
+      <tr><td><strong>SWE-bench (Verified)</strong></td><td>Resolver issues reales de GitHub end-to-end</td><td>El estándar de agentes de código; validó el enfoque "agente + repo + tests"</td></tr>
+      <tr><td><strong>Terminal-Bench</strong></td><td>Tareas arbitrarias en una terminal</td><td>Exactamente el medio que usa este proyecto (agente ↔ CLI)</td></tr>
+      <tr><td><strong>GAIA</strong></td><td>Preguntas de asistente general con uso de herramientas</td><td>Mide el razonamiento multi-paso con tools</td></tr>
+      <tr><td><strong>OSWorld / WebArena</strong></td><td>Manejo de GUI reales (computer use)</td><td>La alternativa que descartamos por lenta/frágil (§3, fila 4)</td></tr>
+      <tr><td><strong>TAU-bench</strong></td><td>Agente + usuario simulado + reglas de negocio</td><td>Mide seguir políticas — análogo a respetar el contrato del DSL</td></tr>
+    </table></div>
+    <p>Tendencia notable: los benchmarks se saturan en 1–2 años (SWE-bench Verified pasó de ~4% en 2023 a &gt;70% en 2025), lo que obliga a medir con tareas cada vez más largas y abiertas — de ahí la métrica de horizonte temporal de METR.</p>
+
+    <h3>Memoria y context engineering</h3>
+    <p>Un agente solo "sabe" lo que cabe en su ventana de contexto, y la calidad de atención se degrada al llenarla (<em>context rot</em>). La disciplina emergente de <strong>context engineering</strong> (sucesora del prompt engineering) gestiona ese recurso escaso con tres técnicas que este proyecto usa de forma natural:</p>
+    <ul>
+      <li><strong>Estado externo en el filesystem</strong>: la memoria durable del agente no es su contexto sino archivos — aquí <code>session/design.json</code> y los artefactos de <code>session/</code>. Cualquier agente (u otro agente, otro día) puede retomar el trabajo leyendo el estado.</li>
+      <li><strong>Instrucciones versionadas y por capas</strong>: <code>CLAUDE.md</code> (arranque mínimo) → <code>AGENTS.md</code> (manual completo) → <code>PRIMITIVES.md</code> / <code>COMSOL_MPH.md</code> (contratos que se cargan solo cuando tocan). Cargar justo lo necesario, justo a tiempo.</li>
+      <li><strong>Herramientas que devuelven poco y denso</strong>: las consultas de <code>qpot</code> imprimen JSON compacto, no volcados — cada token de observación compite por la atención del modelo.</li>
+    </ul>
+
+    <h3>Seguridad y modos de fallo</h3>
+    <div class="grid2">
+      <div class="card"><h4><span class="tag rose">Riesgo</span> Alucinación</h4><p>El modelo afirma algo falso con confianza. <strong>Mitigación estándar: grounding</strong> — toda afirmación debe anclarse a una observación. Aquí: regla de oro "nunca declares el potencial correcto sin correr verify y mirar el PNG".</p></div>
+      <div class="card"><h4><span class="tag rose">Riesgo</span> Inyección de prompt</h4><p>Contenido malicioso en los datos que el agente lee (archivos, webs) intenta darle órdenes. Mitigación: tratar datos como datos, sandboxing, permisos por acción. Aquí la superficie es mínima: el agente solo opera un CLI local.</p></div>
+      <div class="card"><h4><span class="tag rose">Riesgo</span> Ejecución de código no confiable</h4><p>Si el agente puede escribir expresiones evaluables, puede (por error o manipulación) ejecutar cualquier cosa. Aquí: <code>raw_expr</code> pasa por sandbox AST con whitelist — nunca un <code>eval()</code> desnudo.</p></div>
+      <div class="card"><h4><span class="tag rose">Riesgo</span> Reward hacking / Goodhart</h4><p>El agente optimiza la métrica y no la intención ("pasan los tests" ≠ "el código es correcto"). Mitigación: señales múltiples e independientes. Aquí: validador numérico + solver + crítica visual + aceptación humana — cuatro jueces distintos.</p></div>
+    </div>
+    <p>El consenso de la frontera: la autonomía se gradúa, no se regala. Acciones reversibles → el agente procede; acciones costosas o irreversibles → confirmación humana. En este proyecto la "acción costosa" es abrir la JVM de COMSOL, y por eso existe la puerta de validación pre-export.</p>
+
+    <h3>Agentes en ciencia: el patrón que este proyecto replica</h3>
+    <p>La línea de investigación más cercana a este trabajo es la de <strong>agentes científicos</strong>, y todos convergen en el mismo patrón — <em>el LLM propone, un instrumento verificado dispone</em>:</p>
+    <div class="tblwrap"><table>
+      <tr><th>Sistema</th><th>El LLM propone…</th><th>El oráculo es…</th></tr>
+      <tr><td><strong>Coscientist</strong> (Boiko et al., Nature 2023)</td><td>síntesis químicas y su plan experimental</td><td>el robot de laboratorio que las ejecuta</td></tr>
+      <tr><td><strong>ChemCrow</strong> (Bran et al., Nat. Mach. Intell. 2024)</td><td>rutas de reacción usando 18 tools químicas</td><td>las herramientas expertas (RDKit, bases de datos)</td></tr>
+      <tr><td><strong>AI Co-scientist</strong> (Google, 2025)</td><td>hipótesis biomédicas en torneo multi-agente</td><td>revisión experta + experimentos in vitro</td></tr>
+      <tr><td><strong>FunSearch / AlphaEvolve</strong> (DeepMind)</td><td>programas/heurísticas matemáticas</td><td>un evaluador programático exacto</td></tr>
+      <tr><td class="ok"><strong>Este proyecto</strong></td><td class="ok">diseños de potenciales cuánticos (DSL)</td><td class="ok">validador + solver Schrödinger + render + COMSOL</td></tr>
+    </table></div>
+    <p>La lección compartida por toda esta literatura: el LLM <em>no reemplaza</em> al método científico ni al instrumento — lo opera. El valor está en cerrar el ciclo propuesta→prueba→refinamiento a velocidad de máquina, dejando la aceptación final en el humano.</p>
+
+    <h3>Tendencias de frontera a mencionar en la discusión</h3>
+    <ul>
+      <li><strong>Test-time compute</strong>: escalar el "tiempo de pensar" en inferencia (modelos razonadores) mejora tareas difíciles sin reentrenar — complementa el escalado clásico de parámetros/datos.</li>
+      <li><strong>Horizonte de tareas</strong> (METR): la duración de tareas completables con 50% de éxito se duplica ~cada 7 meses; los agentes actuales sostienen tareas de horas.</li>
+      <li><strong>Interoperabilidad</strong>: MCP (agente↔herramientas) y protocolos agente↔agente apuntan a un ecosistema donde los agentes componen servicios como hoy las apps componen APIs.</li>
+      <li><strong>Del prompt al entorno</strong>: la ventaja competitiva se movió de "escribir buenos prompts" a <strong>diseñar buenos entornos</strong> — herramientas, contratos, oráculos y documentación para agentes. Este proyecto es un ejercicio completo de esa disciplina: <code>qpot</code> + <code>AGENTS.md</code> + <code>verify</code> <em>son</em> el entorno.</li>
+    </ul>
+
+    <h3>Referencias clave</h3>
+    <div class="card" style="font-size:13.5px;line-height:1.7">
+      <p style="font-size:13.5px">
+      Wei, J. et al. (2022). <em>Chain-of-Thought Prompting Elicits Reasoning in Large Language Models.</em> NeurIPS.<br>
+      Yao, S. et al. (2023). <em>ReAct: Synergizing Reasoning and Acting in Language Models.</em> ICLR.<br>
+      Schick, T. et al. (2023). <em>Toolformer: Language Models Can Teach Themselves to Use Tools.</em> NeurIPS.<br>
+      Shinn, N. et al. (2023). <em>Reflexion: Language Agents with Verbal Reinforcement Learning.</em> NeurIPS.<br>
+      Wang, G. et al. (2023). <em>Voyager: An Open-Ended Embodied Agent with Large Language Models.</em><br>
+      Boiko, D. et al. (2023). <em>Autonomous chemical research with large language models.</em> Nature 624.<br>
+      Bran, A. M. et al. (2024). <em>Augmenting large language models with chemistry tools (ChemCrow).</em> Nature Machine Intelligence.<br>
+      Jimenez, C. et al. (2024). <em>SWE-bench: Can Language Models Resolve Real-World GitHub Issues?</em> ICLR.<br>
+      Yang, J. et al. (2024). <em>SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering.</em> NeurIPS.<br>
+      Mialon, G. et al. (2023). <em>GAIA: A Benchmark for General AI Assistants.</em><br>
+      Anthropic (2024). <em>Building Effective Agents</em>; <em>Introducing the Model Context Protocol.</em><br>
+      METR (2025). <em>Measuring AI Ability to Complete Long Tasks.</em>
+      </p>
+    </div>
+  </div>
+</section>
+<div class="wrap"><hr class="sep"></div>
+
+<!-- ═══════════════ 05 ═══════════════ -->
+<section id="s4">
+  <div class="wrap">
+    <h2><span class="num">05</span>¿Por qué un agente y no regresión simbólica?</h2>
+    <p class="lede">La regresión simbólica responde "¿qué fórmula ajusta estos datos?". Nuestro problema es otro: "¿qué modelo físico corresponde a esta <em>intención</em>?".</p>
+
+    <p>La regresión simbólica (SR: programación genética, PySR, SINDy…) busca en el espacio de expresiones matemáticas la que minimiza el error contra un conjunto de <strong>datos numéricos</strong>. Es una técnica poderosa — para el problema para el que fue diseñada. El nuestro no lo es, por cinco razones:</p>
+
+    <div class="tblwrap"><table>
+      <tr><th></th><th>Regresión simbólica</th><th>Agente + DSL de primitivas (este proyecto)</th></tr>
+      <tr><td><strong>Entrada</strong></td><td class="bad">Requiere datos (x, V) ya medidos. De una frase o una foto AFM no hay tabla que ajustar.</td><td class="ok">Lenguaje natural e imágenes directamente — el LLM es multimodal.</td></tr>
+      <tr><td><strong>Salida</strong></td><td class="bad">Una expresión arbitraria (p. ej. <code>0.31·tanh(x²−sin x)</code>): ajusta, pero no significa nada físico ni se transfiere a COMSOL como geometría.</td><td class="ok">Composición de primitivas físicas con nombre y unidades (pozo, anillo, Coulomb, campo Stark) — cada parámetro es un slider barrible en COMSOL.</td></tr>
+      <tr><td><strong>Conocimiento previo</strong></td><td class="bad">Ninguno: no sabe que un punto cuántico de GaAs mide 10–100 nm y 50–500 meV.</td><td class="ok">El agente aplica escalas físicas de sanity-check (§4 de AGENTS.md) y masas efectivas correctas por material.</td></tr>
+      <tr><td><strong>Restricciones estructurales</strong></td><td class="bad">Difícil imponer "es una corona entre una hipocicloide y una epicicloide".</td><td class="ok">La geometría se declara: regiones + operaciones booleanas (union/intersection/complement), estilo COMSOL.</td></tr>
+      <tr><td><strong>Verificación</strong></td><td class="bad">Solo error numérico de ajuste; puede sobreajustar sin aviso.</td><td class="ok">Doble: señales objetivas (validador + convergencia del solver + estados ligados) y crítica visual del render contra la imagen fuente.</td></tr>
+    </table></div>
+
+    <p>Dicho de otra forma: la SR hace <strong>interpolación en el espacio de fórmulas</strong>; el agente hace <strong>diseño en el espacio de modelos físicos</strong>. El paralelo correcto de este proyecto no es un ajustador de curvas sino <strong>Text2CAD</strong>: de una descripción, a un objeto paramétrico editable, con un humano (y un solver) en el loop de aceptación.</p>
+
+    <div class="callout teal"><b>Y donde la SR sí sería útil…</b>
+    …es complementaria, no rival: si mañana hubiera datos experimentales de espectros, un módulo de SR podría proponer correcciones al potencial <em>dentro</em> del DSL. El diseño por primitivas no lo excluye; lo estructura.</div>
+  </div>
+</section>
+<div class="wrap"><hr class="sep"></div>
+
+<!-- ═══════════════ 05 ═══════════════ -->
+<section id="s5">
+  <div class="wrap">
+    <h2><span class="num">06</span>Arquitectura y decisiones de diseño</h2>
+    <p class="lede">Cada decisión respondió a un problema concreto que apareció en el desarrollo.</p>
+
+    <h3>La arquitectura en una figura</h3>
+    <figure>
+      <svg viewBox="0 0 880 430" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,'Segoe UI',sans-serif">
+        <defs><marker id="a2" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 z" fill="#4a5268"/></marker></defs>
+        <!-- Agente -->
+        <rect x="20" y="20" width="840" height="120" rx="14" fill="#eef0fe" stroke="#4338ca" stroke-width="2"/>
+        <text x="40" y="48" font-size="15" font-weight="800" fill="#3730a3">AGENTE (Claude Code + AGENTS.md) — el cerebro, sin API de pago</text>
+        <rect x="45" y="65" width="240" height="56" rx="10" fill="#fff" stroke="#4338ca"/>
+        <text x="165" y="88" text-anchor="middle" font-size="13.5" font-weight="700" fill="#3730a3">Designer</text>
+        <text x="165" y="106" text-anchor="middle" font-size="11.5" fill="#4a5268">qpot new / add / set / param</text>
+        <rect x="320" y="65" width="240" height="56" rx="10" fill="#fff" stroke="#4338ca"/>
+        <text x="440" y="88" text-anchor="middle" font-size="13.5" font-weight="700" fill="#3730a3">Verifier</text>
+        <text x="440" y="106" text-anchor="middle" font-size="11.5" fill="#4a5268">qpot verify + MIRA render.png</text>
+        <rect x="595" y="65" width="240" height="56" rx="10" fill="#fff" stroke="#4338ca"/>
+        <text x="715" y="88" text-anchor="middle" font-size="13.5" font-weight="700" fill="#3730a3">Refiner</text>
+        <text x="715" y="106" text-anchor="middle" font-size="11.5" fill="#4a5268">ajusta piezas y repite</text>
+        <line x1="285" y1="93" x2="313" y2="93" stroke="#4338ca" stroke-width="2" marker-end="url(#a2)"/>
+        <line x1="560" y1="93" x2="588" y2="93" stroke="#4338ca" stroke-width="2" marker-end="url(#a2)"/>
+        <path d="M715,121 C715,150 165,150 165,124" fill="none" stroke="#4338ca" stroke-width="1.5" stroke-dasharray="5 4"/>
+        <!-- Design -->
+        <line x1="440" y1="140" x2="440" y2="175" stroke="#4a5268" stroke-width="2" marker-end="url(#a2)"/>
+        <rect x="280" y="180" width="320" height="72" rx="12" fill="#fdf3e3" stroke="#b45309" stroke-width="2"/>
+        <text x="440" y="209" text-anchor="middle" font-size="15" font-weight="800" fill="#b45309">session/design.json</text>
+        <text x="440" y="230" text-anchor="middle" font-size="12" fill="#7c5a1e">DSL: piezas + regiones + parámetros nombrados</text>
+        <text x="440" y="244" text-anchor="middle" font-size="11.5" font-style="italic" fill="#7c5a1e">única fuente de verdad · nm / eV</text>
+        <!-- ramas -->
+        <line x1="340" y1="252" x2="150" y2="300" stroke="#4a5268" stroke-width="2" marker-end="url(#a2)"/>
+        <line x1="440" y1="252" x2="440" y2="300" stroke="#4a5268" stroke-width="2" marker-end="url(#a2)"/>
+        <line x1="540" y1="252" x2="730" y2="300" stroke="#4a5268" stroke-width="2" marker-end="url(#a2)"/>
+        <!-- Solver -->
+        <rect x="30" y="305" width="250" height="90" rx="12" fill="#e6f4f1" stroke="#0e7c6b" stroke-width="2"/>
+        <text x="155" y="332" text-anchor="middle" font-size="14" font-weight="800" fill="#0e7c6b">Solver Python (core/)</text>
+        <text x="155" y="352" text-anchor="middle" font-size="11.5" fill="#4a5268">Schrödinger 1D/2D · dif. finitas</text>
+        <text x="155" y="368" text-anchor="middle" font-size="11.5" fill="#4a5268">Arnoldi sparse (scipy.eigs)</text>
+        <text x="155" y="384" text-anchor="middle" font-size="11.5" fill="#4a5268">→ eigenvalores, |ψ|², CSV/npz</text>
+        <!-- Render -->
+        <rect x="315" y="305" width="250" height="90" rx="12" fill="#e6f4f1" stroke="#0e7c6b" stroke-width="2"/>
+        <text x="440" y="332" text-anchor="middle" font-size="14" font-weight="800" fill="#0e7c6b">Render (sin servidor)</text>
+        <text x="440" y="352" text-anchor="middle" font-size="11.5" fill="#4a5268">render.png (el agente lo VE)</text>
+        <text x="440" y="368" text-anchor="middle" font-size="11.5" fill="#4a5268">potential.html — superficie 3D</text>
+        <text x="440" y="384" text-anchor="middle" font-size="11.5" fill="#4a5268">interactiva (doble clic)</text>
+        <!-- Export -->
+        <rect x="600" y="305" width="260" height="90" rx="12" fill="#e6f4f1" stroke="#0e7c6b" stroke-width="2"/>
+        <text x="730" y="332" text-anchor="middle" font-size="14" font-weight="800" fill="#0e7c6b">Export COMSOL</text>
+        <text x="730" y="352" text-anchor="middle" font-size="11.5" fill="#4a5268">.mph nativo (MPh, sin MATLAB)</text>
+        <text x="730" y="368" text-anchor="middle" font-size="11.5" fill="#4a5268">.m LiveLink (MATLAB)</text>
+        <text x="730" y="384" text-anchor="middle" font-size="11.5" fill="#4a5268">receta markdown paso a paso</text>
+        <text x="440" y="420" text-anchor="middle" font-size="12" fill="#8890a4" font-style="italic">El agente maneja todo por el CLI qpot; el humano puede inspeccionar cada artefacto en session/</text>
+      </svg>
+      <figcaption>Fig. 2 — Arquitectura: el agente ejecuta el loop sobre el Design JSON; solver, render y exportadores son código determinista y confiable.</figcaption>
+    </figure>
+
+    <h3>Evolución: las decisiones y su porqué</h3>
+    <div class="timeline">
+      <div class="tl-item">
+        <div class="when">Versión 1 — punto de partida</div>
+        <h4>App Streamlit + pipeline multi-agente vía API de Anthropic</h4>
+        <p>Cuatro agentes programados (vision, designer, verifier, refiner en <code>legacy/</code>) llamaban a la API por cada iteración. <strong>Problema:</strong> costo por token recurrente, latencia, y una ironía — el estudiante ya tenía un LLM más capaz abierto en su editor, y le estábamos cobrando otro.</p>
+      </div>
+      <div class="tl-item">
+        <div class="when">Decisión clave — giro de arquitectura</div>
+        <h4>Mover el cerebro al agente del usuario (estilo Text2CAD) → nace el CLI <code>qpot</code></h4>
+        <p><strong>Por qué:</strong> API $0, mejor modelo (el harness del usuario siempre trae el más reciente), multimodalidad gratis, y portabilidad: cualquier agente que sepa usar una terminal (Claude Code, Codex, Antigravity) opera la herramienta. El conocimiento de los prompts se destiló en <code>AGENTS.md</code>: los "agentes" pasaron de ser código a ser <em>documentación ejecutable por un LLM</em>.</p>
+      </div>
+      <div class="tl-item">
+        <div class="when">Decisión — representación</div>
+        <h4>DSL JSON de primitivas físicas como única fuente de verdad</h4>
+        <p><strong>Por qué:</strong> restringe al agente a un espacio físicamente significativo (no puede "alucinar" un potencial sin sentido: solo componer piezas válidas), es auditable por el humano, y es traducible 1:1 a geometría COMSOL. 8 regiones + 11 perfiles + operaciones <code>mask/where/union/intersection/complement</code>, con <strong>parámetros nombrados</strong> (R1, R2, n, Vb) al estilo COMSOL para que un cambio se propague y los barridos sobrevivan a la exportación.</p>
+      </div>
+      <div class="tl-item">
+        <div class="when">Decisión — confiabilidad</div>
+        <h4>Verificación por dos canales: señales objetivas + ojos del agente</h4>
+        <p><strong>Por qué:</strong> a un LLM no se le pide fe. <code>qpot verify</code> combina un validador numérico <em>sin IA</em> (esquema, rangos físicos, NaN, solapes de zonas), el solver como oráculo (convergencia, nº de estados ligados) y el render PNG que el agente debe mirar y calificar 0–10 contra el objetivo. Regla de oro: <em>ver para creer</em>.</p>
+      </div>
+      <div class="tl-item">
+        <div class="when">Decisión — seguridad</div>
+        <h4>Sandbox AST para <code>raw_expr</code></h4>
+        <p><strong>Por qué:</strong> si el agente escribe expresiones libres, no pueden pasar por un <code>eval()</code> desnudo. Se validan por árbol sintáctico contra whitelist estricta (solo <code>x, y, r, theta</code>, funciones numpy fijas; sin atributos, sin subscripts, sin dunders; límite 500 chars / profundidad 25).</p>
+      </div>
+      <div class="tl-item">
+        <div class="when">Decisión — trazabilidad</div>
+        <h4>Ficha <code>harnex</code> + puerta de validación pre-export</h4>
+        <p><strong>Por qué:</strong> cada diseño puede llevar un encabezado versionable (id, propósito, justificación de material y dominio, observables esperados) que lo convierte en un componente auditable de laboratorio. Y <code>export_mph()</code> corre <code>validate_for_comsol_export()</code> <em>antes</em> de abrir COMSOL: si el Design no es exportable, falla con la lista de razones sin llegar a lanzar la JVM.</p>
+      </div>
+      <div class="tl-item">
+        <div class="when">Decisión — salida</div>
+        <h4>Exportación por tres vías con degradación elegante</h4>
+        <p><strong>Por qué:</strong> no todos los equipos tienen MATLAB o la librería MPh. <code>recipe</code> (markdown) funciona siempre; <code>.m</code> si hay MATLAB+LiveLink; <code>.mph</code> nativo si hay MPh+COMSOL — y si MPh falta, el sistema cae con gracia a la receta en lugar de romperse.</p>
+      </div>
+    </div>
+  </div>
+</section>
+<div class="wrap"><hr class="sep"></div>
+
+<!-- ═══════════════ 06 ═══════════════ -->
+<section id="s6">
+  <div class="wrap">
+    <h2><span class="num">07</span>El camino a COMSOL: lo que costó hacerlo funcionar</h2>
+    <p class="lede">Generar un <code>.mph</code> que abra y resuelva sin MATLAB fue la parte más dura del desarrollo. Cada regla de esta sección costó un intento fallido.</p>
+
+    <p>El objetivo: que <code>python -m qpot export --format mph</code> produzca un modelo COMSOL con <strong>geometría por entidades</strong> (no una imagen del potencial: cuadrado de dominio + contornos poligonales paramétricos cerrados), la interfaz de <strong>Ecuación de Schrödinger</strong> con masa efectiva y potencial por dominio, un estudio de valor propio, y los <strong>parámetros nombrados preservados</strong> para poder hacer barridos. Todo vía <code>MPh</code>, el puente Python→JVM→API Java de COMSOL.</p>
+
+    <h3>Los tres problemas que hubo que resolver</h3>
+    <div class="grid3">
+      <div class="card">
+        <h4><span class="tag rose">1</span> La matriz Java/MPh/jpype</h4>
+        <p>El error <em>"Java version too old"</em> no venía de COMSOL sino de <code>jpype</code> (≥1.6 exige Java 11, y COMSOL 5.6 trae Java 8). Solución: fijar <code>MPh==1.2.3</code> + <code>jpype1==1.5.2</code>, y <code>JAVA_HOME</code> vacío o apuntando al JRE de COMSOL. También: matar procesos <code>comsolmphserver</code> huérfanos entre corridas.</p>
+      </div>
+      <div class="card">
+        <h4><span class="tag rose">2</span> El potencial por defecto contamina todo</h4>
+        <p>La interfaz Schrödinger trae un nodo de potencial por defecto (<code>ve1</code>) que es <strong>armónico y cubre todos los dominios</strong>. Si queda activo, la física entera sale mal aunque tus nodos estén bien. Regla nº 1: deshabilitarlo siempre (<code>ve1.active(False)</code>).</p>
+      </div>
+      <div class="card">
+        <h4><span class="tag rose">3</span> Repartir V por dominio sin conocer la numeración</h4>
+        <p>Al "formar unión", COMSOL numera los dominios de forma impredecible desde Python. Solución robusta: evaluar la máscara de cada región en una grilla, tomar por componente conexa el punto más interior (<code>distance_transform_edt</code>), y crear ahí una <strong>Ball selection</strong> de radio 0.5 nm que "pesca" el dominio correcto. Cada dominio queda en exactamente un nodo de potencial: partición <strong>disjunta y completa</strong>.</p>
+      </div>
+    </div>
+
+    <figure>
+      <svg viewBox="0 0 860 320" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,'Segoe UI',sans-serif">
+        <defs><marker id="a3" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 z" fill="#4a5268"/></marker></defs>
+        <!-- caso corona -->
+        <text x="180" y="30" text-anchor="middle" font-size="14" font-weight="800" fill="#1a1f2e">Caso real: corona cicloidal</text>
+        <rect x="60" y="50" width="240" height="240" rx="8" fill="#fdeef1" stroke="#be123c" stroke-width="1.5"/>
+        <!-- epicycloid approx (outer flower) -->
+        <path d="M180,78 C210,78 224,96 236,110 C258,114 272,128 272,152 C288,170 288,190 272,208 C270,232 256,246 236,250 C222,266 202,272 180,264 C158,272 138,266 124,250 C104,246 90,232 88,208 C72,190 72,170 88,152 C88,128 102,114 124,110 C136,96 150,78 180,78 Z" fill="#fff" stroke="#be123c" stroke-width="2"/>
+        <!-- hypocycloid approx (inner star) -->
+        <path d="M180,128 C188,144 196,152 212,156 C200,166 196,176 198,192 C186,184 174,184 162,192 C164,176 160,166 148,156 C164,152 172,144 180,128 Z" fill="#fdeef1" stroke="#be123c" stroke-width="2"/>
+        <text x="180" y="310" text-anchor="middle" font-size="11.5" fill="#4a5268">canal (blanco): Ve = 0 · fuera y estrella: Ve = Vb = 228 meV</text>
+        <!-- dots -->
+        <circle cx="180" cy="105" r="4" fill="#0e7c6b"/>
+        <circle cx="180" cy="165" r="4" fill="#b45309"/>
+        <circle cx="72" cy="62" r="4" fill="#b45309"/>
+        <!-- leyenda flechas -->
+        <line x1="310" y1="105" x2="196" y2="105" stroke="#0e7c6b" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <line x1="310" y1="165" x2="196" y2="165" stroke="#b45309" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <!-- proceso -->
+        <rect x="330" y="60" width="500" height="70" rx="10" fill="#e6f4f1" stroke="#0e7c6b" stroke-width="1.5"/>
+        <text x="345" y="86" font-size="13" font-weight="700" fill="#0e7c6b">Nodo "canal" (inner): Ve = 0[eV]</text>
+        <text x="345" y="108" font-size="12" fill="#4a5268">Ball selection en el punto más profundo de cada componente conexa del canal</text>
+        <rect x="330" y="145" width="500" height="70" rx="10" fill="#fdf3e3" stroke="#b45309" stroke-width="1.5"/>
+        <text x="345" y="171" font-size="13" font-weight="700" fill="#b45309">Nodo "barreras" (outer = complemento): Ve = Vb</text>
+        <text x="345" y="193" font-size="12" fill="#4a5268">Cubre estrella interna + exterior — disjunto del canal, juntos cubren TODO</text>
+        <rect x="330" y="230" width="500" height="60" rx="10" fill="#fdeef1" stroke="#be123c" stroke-width="1.5"/>
+        <text x="345" y="256" font-size="13" font-weight="700" fill="#be123c">Nodo default ve1 (armónico): DESHABILITADO</text>
+        <text x="345" y="276" font-size="12" fill="#4a5268">Si queda activo, contamina todos los dominios — regla que nunca se rompe</text>
+      </svg>
+      <figcaption>Fig. 3 — Reparto del potencial por dominios en COMSOL para el caso de la corona entre hipocicloide (R1) y epicicloide (R2): partición disjunta y completa, con el default deshabilitado.</figcaption>
+    </figure>
+
+    <h3>Estructura del modelo generado (orden obligatorio)</h3>
+    <ol class="list">
+      <li><strong>Parámetros globales</strong> con unidades: <code>R1 = 12[nm]</code>, <code>R2 = 28[nm]</code>, <code>n = 7</code>, <code>Vb = 0.228[eV]</code>, <code>m_eff</code>, <code>Ldom</code>.</li>
+      <li><strong>Geometría 2D</strong>: Square de dominio + cada región como entidad (<code>Circle</code>, <code>Ellipse</code>, <code>Rectangle</code> y <code>Polygon</code> cerrado con vértices <em>en función de los parámetros</em> para epicicloides/hipocicloides/superelipses) + Formar unión.</li>
+      <li><strong>Física</strong>: interfaz <code>SchrodingerEquation</code> — masa efectiva <code>m_eff</code>, default <code>ve1</code> deshabilitado, un nodo <code>ElectronPotentialEnergy</code> por zona con su Ball/Union selection.</li>
+      <li><strong>Malla</strong> automática fina + <strong>Estudio de valor propio</strong> (<code>neigs</code>, shift calculado desde el mínimo de V).</li>
+      <li><strong>Guardar</strong> — y envolver <code>client.disconnect()</code> en try/except: en modo standalone lanza un error <em>después</em> de que el .mph ya quedó en disco (ruido, no fallo).</li>
+    </ol>
+
+    <p>Gotchas finos de jpype que costaron intentos: los enteros ambiguos exigen <code>JInt(2)</code> (si no, <em>"Ambiguous overloads"</em>); las selecciones deben referenciarse por el <strong>tag real</strong> que devuelve <code>nodo.java.tag()</code>, no por el nombre con que las creaste.</p>
+
+    <div class="callout teal"><b>Verificación sin COMSOL</b>
+    Un <code>.mph</code> es un ZIP: <code>test_mph.py</code> (test de regresión, no necesita COMSOL) inspecciona <code>dmodel.xml</code> y verifica que la interfaz sea <code>SchrodingerEquation</code>, que <code>ve1</code> diga <code>DISABLED</code>, que los polígonos paramétricos conserven los parámetros, y que la partición atómica sea disjunta y completa. Además <code>qpot verify</code> chequea solapes de zonas (<code>zone_overlap</code>) desde el propio Design. Todo el conocimiento quedó documentado en <code>COMSOL_MPH.md</code> — la "guía definitiva" que cualquier agente futuro debe leer antes de tocar el exportador.</div>
+  </div>
+</section>
+<div class="wrap"><hr class="sep"></div>
+
+<!-- ═══════════════ 07 ═══════════════ -->
+<section id="s7">
+  <div class="wrap">
+    <h2><span class="num">08</span>Fundamento físico y numérico</h2>
+    <p class="lede">El agente diseña; la física la resuelve código determinista y validado.</p>
+
+    <div class="grid2">
+      <div class="card">
+        <h4>Modelo físico</h4>
+        <p>Un electrón en la banda de conducción de una heteroestructura semiconductora, con la aproximación de masa efectiva:</p>
+        <p style="text-align:center;font-family:Georgia,serif;font-size:16px;color:var(--ink)">H = −(ħ²/2m*)∇² + V(<b>r</b>)</p>
+        <p>m* por material (GaAs 0.067·m₀, InAs 0.023, Si 0.191…; Vurgaftman et al. 2001). V incluye heterouniones, impurezas Coulomb regularizadas y campos eléctricos (efecto Stark). Coordenadas en nm, energías en eV.</p>
+      </div>
+      <div class="card">
+        <h4>Solver numérico</h4>
+        <p><strong>Diferencias finitas de 2º orden.</strong> En 1D el Hamiltoniano es tridiagonal → diagonalización directa. En 2D, stencil de 5 puntos sobre grilla N×N → matriz sparse enorme, se extraen solo los N estados de menor energía con el <strong>algoritmo de Arnoldi</strong> (<code>scipy.sparse.linalg.eigs</code>). Frontera: ψ=0 en los bordes.</p>
+      </div>
+    </div>
+
+    <h3>Validación contra soluciones analíticas</h3>
+    <div class="tblwrap"><table>
+      <tr><th>Sistema</th><th>Numérico</th><th>Analítico</th><th>Error</th></tr>
+      <tr><td>Pozo infinito 1D (E₁, L=40 nm, GaAs)</td><td>3.475 meV</td><td>3.508 meV</td><td class="ok">0.9 %</td></tr>
+      <tr><td>Oscilador armónico 1D (E₀, ω=0.0005)</td><td>11.923 meV</td><td>11.923 meV</td><td class="ok">&lt; 0.01 %</td></tr>
+      <tr><td>Oscilador 2D — razones E₀:E₁:E₂</td><td>1.00 : 2.00 : 2.99</td><td>1 : 2 : 3</td><td class="ok">✓</td></tr>
+    </table></div>
+    <p>Esta validación es también la garantía del loop agéntico: cuando el agente usa el número de estados ligados o la convergencia como señal objetiva, está apoyándose en un oráculo verificado.</p>
+  </div>
+</section>
+<div class="wrap"><hr class="sep"></div>
+
+<!-- ═══════════════ 08 ═══════════════ -->
+<section id="s8">
+  <div class="wrap">
+    <h2><span class="num">09</span>Estado del proyecto y avance</h2>
+    <p class="lede">Qué funciona hoy, qué se demostró, y qué sigue.</p>
+
+    <h3>Completado y funcionando</h3>
+    <div class="grid2">
+      <div class="card"><h4><span class="tag teal">✓</span> CLI qpot completo</h4><p>~20 subcomandos: sesión, piezas, parámetros nombrados, presets (10 en 1D, 5 en 2D), render PNG + HTML 3D interactivo sin servidor, solve, verify, export. Consultas en JSON legible por máquina.</p></div>
+      <div class="card"><h4><span class="tag teal">✓</span> DSL de potenciales</h4><p>8 regiones geométricas (incl. epicicloide, hipocicloide, superelipse, polígono) + 11 perfiles de energía + operaciones booleanas y piecewise (<code>mask</code>, <code>where</code>). Geometría separada del potencial, estilo COMSOL.</p></div>
+      <div class="card"><h4><span class="tag teal">✓</span> Solver validado</h4><p>1D y 2D con error &lt;1% contra soluciones analíticas; convergencia y conteo de estados ligados como señales objetivas del loop.</p></div>
+      <div class="card"><h4><span class="tag teal">✓</span> Export triple a COMSOL</h4><p><code>.mph</code> nativo verificado (interfaz Schrödinger, geometría paramétrica, potencial por dominio disjunto, parámetros barribles), <code>.m</code> LiveLink y receta markdown; más CSV/npz. Con test de regresión <code>test_mph.py</code>.</p></div>
+      <div class="card"><h4><span class="tag teal">✓</span> Flujo agéntico documentado</h4><p><code>AGENTS.md</code> (manual del agente, multi-cliente), <code>PRIMITIVES.md</code> (contrato del DSL), <code>COMSOL_MPH.md</code> (guía definitiva del .mph), comando <code>/potential</code> en Claude Code.</p></div>
+      <div class="card"><h4><span class="tag teal">✓</span> Caso real resuelto</h4><p>La corona cicloidal: electrón confinado en el canal entre una hipocicloide (R1=12 nm) y una epicicloide (R2=28 nm), n lóbulos, barrera de 228 meV — diseñada por parámetros, verificada y exportada a .mph funcional.</p></div>
+    </div>
+
+    <h3>Trabajo en curso y siguiente etapa</h3>
+    <ul>
+      <li><strong>Campos magnéticos</strong>: primitiva dedicada (Landau gauge) — hoy se puede aproximar con <code>polynomial</code>/<code>raw_expr</code>.</li>
+      <li><strong>Observables ópticos</strong>: absorción / regla de oro de Fermi (módulo <code>core/optical.py</code> pendiente).</li>
+      <li><strong>Barridos y polarizabilidad</strong>: módulo <code>core/observables.py</code> (barrido sobre F o B).</li>
+      <li>Limitaciones asumidas del modelo: masa efectiva escalar, un solo electrón (sin interacción e–e), frontera ψ=0.</li>
+      <li>Posible extensión agéntica: exponer <code>qpot</code> como <strong>servidor MCP</strong> para usar la herramienta desde clientes remotos.</li>
+    </ul>
+
+    <h3>Síntesis para la discusión</h3>
+    <p>El aporte del proyecto es metodológico además de funcional: demuestra un patrón replicable para instrumentos científicos — <strong>separar el cerebro (agente LLM, gratuito, intercambiable) del músculo (solver y exportadores deterministas, validados)</strong>, unidos por un contrato explícito (el DSL JSON) y un ciclo de verificación con señales objetivas. El agente nunca es la autoridad física: es el diseñador que propone y el crítico que compara; la autoridad son el validador, el solver y los ojos del usuario sobre artefactos siempre inspeccionables.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    Quantum Potential AI · Documento de presentación generado a partir del repositorio (AGENTS.md, README.md, COMSOL_MPH.md, PRIMITIVES.md y el historial de desarrollo) · Julio 2026.<br>
+    Solver: NumPy/SciPy · Render: Matplotlib/Plotly · COMSOL vía MPh · Agente: Claude Code (o cualquier LLM con terminal).
+  </div>
+</footer>
+
+</body>
+</html>
