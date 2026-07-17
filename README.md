@@ -75,7 +75,7 @@ Coordenadas en nm y energías en eV. Los parámetros contienen semántica explí
     "R1": {
       "value": 12,
       "unit": "nm",
-      "dtype": "int",
+      "dtype": "float",
       "kind": "length",
       "role": "radio interior",
       "min": 5,
@@ -102,6 +102,19 @@ dispersa mediante `scipy.sparse.linalg.eigsh`. El dominio numérico impone Diric
 en el exterior. Los resultados son una referencia local; la equivalencia con COMSOL debe
 pasar la certificación descrita abajo.
 
+El backend estable es `scipy-arpack-cpu`: funciona en Windows, macOS y Linux sin depender de
+una GPU. En 2D calcula internamente estados Ritz adicionales y usa una búsqueda determinista
+para no perder niveles degenerados en discos, anillos y otras geometrías simétricas; la salida
+continúa conteniendo exactamente los estados solicitados. Los operadores cinéticos dispersos
+se reutilizan entre verificaciones y barridos con la misma malla, evitando reconstruir la parte
+más estable del Hamiltoniano. El JSON de `solve`/`verify` informa `backend`,
+`requested_states` y `computed_states` para que el coste sea auditable.
+
+La versión 1.0 no activa GPU automáticamente. ARPACK trabaja principalmente en CPU y una copia
+CPU→GPU puede empeorar los casos docentes pequeños; además, CUDA excluiría equipos sin NVIDIA y
+Apple Silicon. La ruta prevista es un backend CUDA **opcional y explícito**, con el backend CPU
+como referencia y comparación numérica obligatoria antes de aceptar sus resultados.
+
 ## COMSOL 5.6
 
 - `recipe`: receta Markdown auditable.
@@ -117,12 +130,18 @@ La certificación remota usa claves SSH existentes y tres variables, documentada
 
 ```bash
 qpot comsol-remote-validate --out remote-comsol-results
+python scripts/comsol56_certification_suite.py --out remote-comsol-results/suite
 ```
 
-El ASUS debe ejecutar `scripts/comsol56_worker.py`. La certificación exige abrir, resolver y
-comparar los eigenvalores: 1% para potenciales suaves y 3% para fronteras discontinuas.
+El ASUS debe ejecutar `scripts/comsol56_worker.py`. El segundo comando recorre la matriz
+obligatoria (1D, regiones, corona cicloidal, booleanas, zonas disjuntas y barrido). La
+certificación inspecciona el árbol del modelo y exige abrir, resolver y comparar los
+eigenvalores: 1% para potenciales suaves y 3% para fronteras discontinuas.
+Si SSH no está disponible, copia el repositorio al ASUS y ejecuta allí exactamente la misma
+matriz con `python scripts/comsol56_certification_suite.py --local --out certification-local`.
 Las versiones soportadas están en [COMPATIBILITY.md](COMPATIBILITY.md) y los detalles de la
-API COMSOL en [COMSOL_MPH.md](COMSOL_MPH.md).
+API COMSOL en [COMSOL_MPH.md](COMSOL_MPH.md). El resultado de la última matriz real está en
+[docs/COMSOL56_CERTIFICATION_STATUS.md](docs/COMSOL56_CERTIFICATION_STATUS.md).
 
 ## App y agente
 
@@ -134,6 +153,16 @@ La app permite seleccionar proyectos, editar parámetros con unidades, registrar
 ver historial y ejecutar el mismo pipeline que `qpot verify`. El agente debe seguir
 [AGENTS.md](AGENTS.md), mirar `render.png`, registrar `qpot assess` y no declarar terminado un
 caso hasta que `ready_to_export` sea verdadero.
+
+## Caso demostrativo para clase
+
+El caso [tres picos dentro de un único pozo](examples/punto_cuantico_3_picos_1_pozo/README.md)
+parte de una imagen AFM, conserva un solo confinamiento conectado y añade tres protuberancias
+positivas. Incluye Design 1.0, objetivo, evaluación visual, render, funciones de onda, barrido
+paramétrico y comparación real con COMSOL 5.6. El error máximo Python–COMSOL fue 0.224%.
+
+Los archivos de trabajo y los `.mph` permanecen fuera de Git. En `examples/` solo se versiona
+la evidencia compacta necesaria para entender y reproducir el caso.
 
 ## Calidad
 

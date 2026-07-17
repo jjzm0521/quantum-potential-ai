@@ -8,7 +8,8 @@
 | COMSOL 6.x | No certificado en 1.0 |
 | Windows 10/11 | Soportado por `run.bat` |
 | macOS/Linux | Soportado para solver/app; COMSOL se valida remotamente |
+| Solver CPU (`scipy-arpack-cpu`) | Backend de referencia, soportado en todas las plataformas anteriores |
+| Solver GPU/CUDA | No habilitado en 1.0; aceleración opcional planificada, nunca requisito |
 
 El export `.mph` solo se declara compatible para los casos que pasan apertura, solución y
 comparación numérica mediante el runner remoto. Las geometrías no traducibles se bloquean.
-

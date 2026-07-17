@@ -107,10 +107,44 @@ def plot_potential(field: dict[str, Any], mode: str) -> go.Figure:
     x = field["x_nm"]
     y = field["y_nm"]
     v_mev = field["V_eV"] * 1000.0
+
+    if mode in {"Topografía inferida", "Topografía 3D", "Topografía superior"}:
+        # AFM brightness/height and electron potential need not have the same
+        # sign.  For the presentation workflow we expose the explicitly
+        # declared assumption that a taller dot gives deeper confinement.
+        height = -v_mev
+        height = height - float(np.nanmin(height))
+        scale = float(np.nanmax(height))
+        if scale > 0:
+            height = height / scale
+        if mode == "Topografía superior":
+            fig = go.Figure(go.Heatmap(
+                x=x, y=y, z=height, colorscale="Hot",
+                colorbar=dict(title="altura<br>relativa"),
+            ))
+            fig.update_yaxes(scaleanchor="x", scaleratio=1)
+            title = "Topografía inferida: claro = alto, oscuro = depresión"
+        else:
+            fig = go.Figure(go.Surface(
+                x=x, y=y, z=height, colorscale="Hot",
+                colorbar=dict(title="altura<br>relativa"),
+            ))
+            fig.update_layout(scene=dict(
+                xaxis_title="x (nm)", yaxis_title="y (nm)",
+                zaxis_title="altura relativa",
+                camera=dict(eye=dict(x=1.45, y=-1.55, z=1.05)),
+            ))
+            title = "Topografía inferida: protuberancia central y depresión envolvente"
+        fig.update_layout(
+            height=560, margin=dict(l=8, r=8, t=36, b=8),
+            template="plotly_white", title=title,
+        )
+        return fig
+
     cmin, cmax = render._clip_range(v_mev)
     v_plot = np.clip(v_mev, cmin, cmax) if cmin is not None else v_mev
 
-    if mode == "Vista superior":
+    if mode in {"Vista superior", "Potencial superior"}:
         fig = go.Figure(
             go.Heatmap(
                 x=x,
@@ -342,10 +376,17 @@ def render_sidebar(design: dict[str, Any] | None) -> bool:
         st.divider()
         st.subheader("Pedido al agente")
         st.caption("Usa esto como puente tipo Text2CAD: describes el potencial y el agente modifica la misma sesion.")
+        target_path = session.artifact("target.json")
+        try:
+            target_data = json.loads(target_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            target_data = {"description": "", "features": {}, "tolerances": {}}
+        project_key = projects.active_slug() or "session"
         goal = st.text_area(
             "Objetivo",
-            value="Construye un anillo cuantico de GaAs, radio 45 nm y profundidad 300 meV.",
+            value=target_data.get("description", ""),
             height=90,
+            key=f"agent_goal_{project_key}",
         )
         if design is not None:
             dim = int(design.get("dim", 2))
@@ -362,20 +403,15 @@ def render_sidebar(design: dict[str, Any] | None) -> bool:
             language="text",
         )
         with st.expander("Objetivo verificable"):
-            target_path = session.artifact("target.json")
-            try:
-                target_data = json.loads(target_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                target_data = {"description": "", "features": {}, "tolerances": {}}
             target_description = st.text_area("Descripción del objetivo",
                                               value=target_data.get("description", ""),
-                                              key="target_description")
+                                              key=f"target_description_{project_key}")
             target_features = st.text_area("Features esperadas (JSON)",
                                            value=json.dumps(target_data.get("features", {}), ensure_ascii=False),
-                                           key="target_features")
+                                           key=f"target_features_{project_key}")
             target_tolerances = st.text_area("Tolerancias (JSON)",
                                              value=json.dumps(target_data.get("tolerances", {}), ensure_ascii=False),
-                                             key="target_tolerances")
+                                             key=f"target_tolerances_{project_key}")
             if st.button("Guardar objetivo"):
                 try:
                     projects._atomic_json(target_path, {
@@ -595,7 +631,12 @@ with right:
     st.subheader("Visualizacion")
     view_mode = "Curva 1D"
     if dim == 2:
-        view_mode = st.radio("Modo", ["Superficie 3D", "Vista superior"], horizontal=True)
+        view_mode = st.radio(
+            "Modo",
+            ["Potencial 3D", "Potencial superior"],
+            horizontal=True,
+            key="view_mode_potential_direct_v3",
+        )
     try:
         field = session.evaluate_potential(design)
         rng = session._range_summary(field["V_eV"])
@@ -603,6 +644,9 @@ with right:
         metrics[0].metric("V min", f"{rng['min'] * 1000:.2f} meV")
         metrics[1].metric("V max", f"{rng['max'] * 1000:.2f} meV")
         metrics[2].metric("Piezas", len(pieces))
+        st.caption(
+            "Se muestra V directamente: amarillo = pico positivo; morado = pozo negativo."
+        )
         st.plotly_chart(plot_potential(field, view_mode), width="stretch")
     except Exception as exc:  # noqa: BLE001
         st.error(f"No se pudo evaluar el potencial: {exc}")

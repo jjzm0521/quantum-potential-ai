@@ -12,8 +12,8 @@ informativa. La app principal usa try/except para deshabilitar el botón.
 
 from __future__ import annotations
 import os
-import hashlib
 import json
+import warnings
 from pathlib import Path
 from datetime import datetime
 
@@ -30,6 +30,53 @@ if not os.environ.get("JAVA_HOME"):
 
 from .composer import design_to_matlab_expr
 from .harnex import validate_for_comsol_export, ComsolExportError
+
+
+def _attach_qpot_metadata(model, design: dict, material_name: str, m_eff: float) -> str:
+    """Embed traceability metadata in fields readable through the COMSOL Java API."""
+    from qpot.schema import design_hash
+
+    revision_hash = design_hash(design)
+    metadata = {
+        "generator": "Quantum Potential AI",
+        "generator_version": "1.0.0",
+        "schema_version": str(design.get("schema_version", "legacy")),
+        "design_hash": revision_hash,
+        "material": material_name,
+        "effective_mass_me": float(m_eff),
+        "parameters": design.get("parameters", {}),
+    }
+    model.java.label(f"Quantum Potential AI 1.0 [{revision_hash[:12]}]")
+    model.java.comments("QPOT_METADATA_JSON=" + json.dumps(metadata, sort_keys=True))
+    return revision_hash
+
+
+def _configure_effective_mass(physics) -> None:
+    """Configure the electron effective mass using COMSOL 5.6 property names."""
+    feature = physics.java.feature("meff1")
+    feature.set("meffe_psi_src", "userdef")
+    feature.set("meffe_psi", "m_eff*me_const")
+
+
+def _spectral_shift_eV(design: dict) -> float:
+    """Place COMSOL's shift below the spectrum so it returns the lowest bound states."""
+    import numpy as np
+    from .composer import resolve_params, evaluate_design, evaluate_design_1d
+    from .solver import make_grid
+
+    resolved = resolve_params(design)
+    dim = int(resolved.get("dim", 2))
+    domain = resolved.get("domain") or {}
+    length = float(domain.get("L", 120.0 if dim == 1 else 200.0))
+    if dim == 1:
+        count = min(max(int(domain.get("N", 256)), 128), 1024)
+        x = np.linspace(-length / 2, length / 2, count)
+        minimum = float(np.min(evaluate_design_1d(resolved, x)))
+    else:
+        count = min(max(int(domain.get("N", 96)), 64), 160)
+        _x, _y, X, Y = make_grid(length, count)
+        minimum = float(np.min(evaluate_design(resolved, X, Y)))
+    return minimum
 
 
 def mph_available() -> tuple[bool, str]:
@@ -90,20 +137,17 @@ def export_mph(
     # Iniciar cliente COMSOL
     client = mph.start()
     model = client.create("QuantumPotentialAI")
-    revision_hash = hashlib.sha256(json.dumps(design, sort_keys=True).encode("utf-8")).hexdigest()
-    model.java.label(f"Quantum Potential AI 1.0 [{revision_hash[:12]}]")
+    _attach_qpot_metadata(model, design, material_name, m_eff)
 
     # Parámetros físicos
     model.parameter("hbar",   "1.054571817e-34[J*s]")
     model.parameter("m_e",    "9.10938e-31[kg]")
-    model.parameter("eV",     "1.60218e-19[J]")
     model.parameter("m_eff",  str(m_eff))
     model.parameter("m_star", "m_eff*m_e")
     model.parameter("L",      f"{L_m}[m]")
-    if dim == 2:
-        from .comsol_export import collect_parameters
-        for name, expr, _desc in collect_parameters(design):
-            model.parameter(name, expr)
+    from .comsol_export import collect_parameters
+    for name, expr, _desc in collect_parameters(design):
+        model.parameter(name, expr)
 
     # Geometría
     geom = model.create("geometries/geom1", dim)
@@ -134,28 +178,27 @@ def export_mph(
 
     if dim == 2:
         # Física: interfaz dedicada de Schrödinger con energía potencial del electrón.
-        phys = model.create("physics/schr", "SchrodingerEquation", geom.name())
-        phys.java.feature("meff1").set("meff", "m_eff")
+        # COMSOL 5.6 expects the dependent-field matrix as the third argument. Passing
+        # the geometry tag here selects the wrong overload and creates CoefficientFormPDE.
+        phys = model.create("physics/schr", "SchrodingerEquation", geom.tag(), [["psi"]])
+        _configure_effective_mass(phys)
         phys.java.feature("ve1").active(False)
         ve = phys.create("ElectronPotentialEnergy", name="ve_afm")
         ve.java.selection().all()
         ve.java.set("Ve_src", "userdef")
-        ve.java.set("Ve", "V_pot(x,y)")
+        ve.java.set("Ve", expr_str)
     else:
-        # 1D conserva el camino PDE analítico legacy.
-        phys = model.create("physics/c", "CoefficientFormPDE", geom.name())
-        phys.java.field("dimensionless").fieldname(["psi"])
-        cfeq = phys.java.feature("cfeq1")
-        cfeq.set("c", "hbar^2/(2*m_star)")
-        cfeq.set("a", "V_pot(x)*eV")
-        cfeq.set("da", "1")
-        diri = phys.create("DirichletBoundary", name="dir1")
-        diri.select("all")
-        diri.property("r", "0")
+        phys = model.create("physics/schr", "SchrodingerEquation", geom.tag(), [["psi"]])
+        _configure_effective_mass(phys)
+        ve = phys.java.feature("ve1")
+        ve.set("Ve_src", "userdef")
+        ve.set("Ve", expr_str)
 
     # Malla
     mesh = model.create("meshes/mesh1", geom.name())
-    mesh.java.autoMeshSize(3 if dim == 2 else 2)  # 3 = Normal (2D), 2 = Fine (1D)
+    # Use the finest automatic preset: narrow smooth features must satisfy the
+    # same 1% Python–COMSOL criterion as broad Gaussian wells.
+    mesh.java.autoMeshSize(1)
     mesh.run()
 
     # Estudio eigenvalor
@@ -163,16 +206,15 @@ def export_mph(
     eig = study.create("Eigenvalue", name="eig")
     eig.property("neigsactive", True)
     eig.property("neigs", n_states)
-    eig.java.set("shift", "0")
-    eig.java.set("eigref", "0.1")
+    eig.java.set("shift", repr(_spectral_shift_eV(design)))
 
     # Guardar (no correr — el profe lo corre desde COMSOL)
     out = Path(output_path)
     model.save(str(out))
     try:
         client.disconnect()
-    except Exception:
-        pass
+    except Exception as exc:
+        warnings.warn(f"El .mph se guardó, pero MPh no pudo desconectarse: {exc}", RuntimeWarning)
 
     return out
 
@@ -276,8 +318,7 @@ def export_mph_geometry(
 
     client = mph.start()
     model = client.create("QuantumPotentialGeom")
-    revision_hash = hashlib.sha256(json.dumps(design, sort_keys=True).encode("utf-8")).hexdigest()
-    model.java.label(f"Quantum Potential AI 1.0 [{revision_hash[:12]}]")
+    _attach_qpot_metadata(model, design, material_name, m_eff)
 
     # --- Parámetros globales (nombres conservados → barridos en COMSOL) ---
     model.parameter("m_eff", str(m_eff))
@@ -351,8 +392,8 @@ def export_mph_geometry(
     geom.run()
 
     # --- Física: Ecuación de Schrödinger ---
-    phys = model.create("physics/schr", "SchrodingerEquation", geom.name())
-    phys.java.feature("meff1").set("meff", "m_eff")
+    phys = model.create("physics/schr", "SchrodingerEquation", geom.tag(), [["psi"]])
+    _configure_effective_mass(phys)
 
     # Deshabilitar el nodo de Energía potencial por DEFECTO de la interfaz (su Ve por
     # defecto es armónico y se aplica a todos los dominios → contamina). Lo reemplazamos
@@ -397,9 +438,20 @@ def export_mph_geometry(
         _add_potential("ve_inner", _selection_from_points(inner_pts, "sel_in"), a["value"])
         _add_potential("ve_outer", _selection_from_points(outer_pts, "sel_out"), a["base"])
     elif assignments:
-        # Varias regiones: base en todo + overrides por región (COMSOL resuelve por
-        # exclusividad: el nodo posterior se queda con sus dominios).
-        _add_potential("ve_base", None, assignments[0]["base"])
+        # Varias regiones disjuntas: la base se asigna sólo al complemento de la unión.
+        # Los nodos ElectronPotentialEnergy son acumulativos en COMSOL, de modo que nunca
+        # ponemos una base global debajo de los valores regionales.
+        union_region = {
+            "op": "union",
+            "regions": [_resolve_region(a["region"], design) for a in assignments],
+        }
+        _inner_pts, outer_pts = _region_inner_outer_points(union_region, L_nm)
+        if outer_pts:
+            _add_potential(
+                "ve_base",
+                _selection_from_points(outer_pts, "sel_base"),
+                assignments[0]["base"],
+            )
         for k, a in enumerate(assignments, 1):
             pts = _interior_points(_resolve_region(a["region"], design), L_nm)
             _add_potential(f"ve_{k}", _selection_from_points(pts, f"sel{k}"), a["value"])
@@ -411,22 +463,26 @@ def export_mph_geometry(
 
     # --- Malla ---
     mesh = model.create("meshes/mesh1", geom.name())
-    mesh.java.autoMeshSize(3)
+    # The central-peak/annular-trench demo contains a narrow 4.5 nm feature;
+    # preset 2 left one excited state at 1.28% error.  Preset 1 resolves that
+    # scale while the sparse Python solver remains the independent reference.
+    mesh.java.autoMeshSize(1)
     mesh.run()
 
     # --- Estudio de valor propio ---
     study = model.create("studies/std1")
     eig = study.create("Eigenvalue", name="eigv")
     eig.property("neigs", n_states)
-    eig.java.set("shift", "0")
-    eig.java.set("eigref", "0.1")
+    eig.java.set("shift", repr(_spectral_shift_eV(design)))
 
     out = Path(output_path)
     model.save(str(out))
     try:
         client.disconnect()
-    except Exception:
-        pass  # en modo stand-alone disconnect() puede no aplicar; el .mph ya se guardó
+    except Exception as exc:
+        # En modo stand-alone disconnect() puede no aplicar; el archivo ya fue guardado,
+        # pero el incidente queda visible para no ocultar excepciones.
+        warnings.warn(f"El .mph se guardó, pero MPh no pudo desconectarse: {exc}", RuntimeWarning)
     return out
 
 

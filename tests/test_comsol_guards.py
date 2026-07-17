@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from core import comsol_export
 from core.composer import design_to_matlab_expr_1d
+from core.exporter_mph import _attach_qpot_metadata, _spectral_shift_eV
 import pytest
 from qpot import session
 from qpot.schema import design_hash
@@ -63,6 +64,50 @@ def test_typed_parameters_keep_comsol_units_in_analytic_expression():
     assert "x0e-9" not in expr and "sigmae-9" not in expr
 
 
+def test_mph_metadata_contains_revision_and_physics_context():
+    class JavaModel:
+        def label(self, value):
+            self.model_label = value
+
+        def comments(self, value):
+            self.model_comments = value
+
+    model = type("Model", (), {"java": JavaModel()})()
+    design = {"schema_version": "1.0", "dim": 1, "parameters": {}, "pieces": []}
+    revision = _attach_qpot_metadata(model, design, "GaAs", 0.067)
+    assert revision[:12] in model.java.model_label
+    assert '"material": "GaAs"' in model.java.model_comments
+    assert '"effective_mass_me": 0.067' in model.java.model_comments
+
+
+def test_comsol56_mass_uses_explicit_electron_mass_properties():
+    from pathlib import Path
+
+    source = Path("core/exporter_mph.py").read_text(encoding="utf-8")
+    assert 'set("meffe_psi_src", "userdef")' in source
+    assert 'set("meffe_psi", "m_eff*me_const")' in source
+    assert '.set("meff",' not in source
+    assert 'model.parameter("eV"' not in source
+
+
+def test_comsol_spectral_shift_targets_negative_bound_states():
+    design = {
+        "dim": 1, "domain": {"L": 100, "N": 128},
+        "pieces": [{"op": "mask", "region": {"op": "interval", "args": {
+            "center": 0, "length": 30}}, "value": -0.3}],
+    }
+    assert _spectral_shift_eV(design) == pytest.approx(-0.3)
+
+
+def test_analytic_comsol_potential_is_assigned_directly_without_double_unit_conversion():
+    from pathlib import Path
+
+    source = Path("core/exporter_mph.py").read_text(encoding="utf-8")
+    assert 've.set("Ve", expr_str)' in source
+    assert 've.java.set("Ve", expr_str)' in source
+    assert 'set("Ve", "V_pot(' not in source
+
+
 @pytest.mark.parametrize("region", [
     {"op": "disk", "args": {"center": [0, 0], "radius": 20}},
     {"op": "rectangle", "args": {"center": [0, 0], "Lx": 30, "Ly": 20}},
@@ -110,3 +155,25 @@ def test_mph_fallback_must_be_explicit(tmp_path, monkeypatch):
     assert path is None and "--allow-fallback" in message
     path, _ = session.export_design(design, "mph", allow_fallback=True)
     assert path and path.suffix == ".md" and path.exists()
+
+
+def test_remote_certification_matrix_is_statically_exportable():
+    from scripts.comsol56_certification_suite import mandatory_cases
+
+    cases = mandatory_cases()
+    assert len(cases) >= 10
+    failures = {
+        name: comsol_export.exportability_issues(design)
+        for name, design in cases.items()
+        if comsol_export.exportability_issues(design)
+    }
+    assert failures == {}
+
+
+def test_comsol56_exporter_does_not_emit_unsupported_eigref_property():
+    from pathlib import Path
+
+    source = Path("core/exporter_mph.py").read_text(encoding="utf-8")
+    assert 'set("eigref"' not in source
+    assert 'model.create("physics/schr", "SchrodingerEquation", geom.tag(), [["psi"]])' in source
+    assert 'model.create("physics/schr", "SchrodingerEquation", geom.name())' not in source

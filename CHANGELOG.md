@@ -8,4 +8,6 @@
 - Estados ligados medidos contra el umbral físico exterior.
 - Pipeline único de verificación para CLI, app y agentes.
 - Exportación COMSOL estricta y runner remoto de certificación.
-
+- Solver 2D reproducible con sobrecálculo de estados para preservar degeneraciones.
+- Caché acotada de operadores cinéticos y metadatos auditables de backend/coste.
+- Validación real Python–COMSOL 5.6 del disco con error máximo inferior a 0.3%.

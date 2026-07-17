@@ -1,0 +1,201 @@
+{
+  "python_energies_meV": [
+    -92.41138,
+    -89.152277,
+    -72.967771,
+    -70.064327,
+    -57.999903,
+    -52.584495
+  ],
+  "comsol_energies_meV": [
+    -92.36409311948852,
+    -89.1066457972629,
+    -72.89205503308338,
+    -69.98592059876343,
+    -57.895906996440566,
+    -52.466484639928034
+  ],
+  "relative_errors": [
+    0.0005116997550678126,
+    0.0005118344059467872,
+    0.0010376631474273556,
+    0.0011190630752305306,
+    0.0017930375428289527,
+    0.002244204495487944
+  ],
+  "tolerance": 0.01,
+  "inspection": {
+    "component": "mod1",
+    "geometry_features": [
+      "sq1",
+      "fin"
+    ],
+    "domain_count": 1,
+    "physics": "schr",
+    "physics_type": "SchrodingerEquation",
+    "physics_features": [
+      "meff1",
+      "ve1",
+      "zflx1",
+      "init1",
+      "ve2"
+    ],
+    "effective_mass_expression": "m_eff*me_const",
+    "effective_mass_source": "userdef",
+    "potentials": [
+      {
+        "tag": "ve2",
+        "domains": [
+          1
+        ],
+        "Ve": "((-0.06)*exp(-((x-(-8e-9))^2+(y-(0e-9))^2)/(2*(20e-9)^2)) + (-0.06)*exp(-((x-(8e-9))^2+(y-(0e-9))^2)/(2*(20e-9)^2)) + (0.1)*exp(-((x-(-19e-9))^2+(y-(3e-9))^2)/(2*(6.5e-9)^2)) + (0.24)*exp(-((x-(0e-9))^2+(y-(-1e-9))^2)/(2*(4.5e-9)^2)) + (0.11)*exp(-((x-(17e-9))^2+(y-(-3e-9))^2)/(2*(7e-9)^2)) + (-0.08)*exp(-((x-(0e-9))^2+(y-(-1e-9))^2)/(2*(10e-9)^2)))[eV]"
+      }
+    ],
+    "domain_coverage": {
+      "1": [
+        "ve2"
+      ]
+    },
+    "study_features": [
+      "eigv"
+    ],
+    "metadata": {
+      "design_hash": "c90812dcf28ff20240b4d0f0c91e12f61e02657d378909e602a6cd83f5392666",
+      "effective_mass_me": 0.067,
+      "generator": "Quantum Potential AI",
+      "generator_version": "1.0.0",
+      "material": "GaAs",
+      "parameters": {
+        "V_body": {
+          "dtype": "float",
+          "kind": "energy",
+          "role": "Par\u00e1metro V_body",
+          "unit": "eV",
+          "value": -0.06
+        },
+        "V_center_peak": {
+          "dtype": "float",
+          "kind": "energy",
+          "role": "Par\u00e1metro V_center_peak",
+          "unit": "eV",
+          "value": 0.24
+        },
+        "V_central_trench": {
+          "dtype": "float",
+          "kind": "energy",
+          "role": "Par\u00e1metro V_central_trench",
+          "unit": "eV",
+          "value": -0.08
+        },
+        "V_left_peak": {
+          "dtype": "float",
+          "kind": "energy",
+          "role": "Par\u00e1metro V_left_peak",
+          "unit": "eV",
+          "value": 0.1
+        },
+        "V_right_peak": {
+          "dtype": "float",
+          "kind": "energy",
+          "role": "Par\u00e1metro V_right_peak",
+          "unit": "eV",
+          "value": 0.11
+        },
+        "sigma_body": {
+          "dtype": "float",
+          "kind": "length",
+          "role": "Par\u00e1metro sigma_body",
+          "unit": "nm",
+          "value": 20
+        },
+        "sigma_center": {
+          "dtype": "float",
+          "kind": "length",
+          "role": "Par\u00e1metro sigma_center",
+          "unit": "nm",
+          "value": 4.5
+        },
+        "sigma_central_trench": {
+          "dtype": "float",
+          "kind": "length",
+          "role": "Par\u00e1metro sigma_central_trench",
+          "unit": "nm",
+          "value": 10
+        },
+        "sigma_left": {
+          "dtype": "float",
+          "kind": "length",
+          "role": "Par\u00e1metro sigma_left",
+          "unit": "nm",
+          "value": 6.5
+        },
+        "sigma_right": {
+          "dtype": "float",
+          "kind": "length",
+          "role": "Par\u00e1metro sigma_right",
+          "unit": "nm",
+          "value": 7
+        },
+        "x_body_left": {
+          "dtype": "float",
+          "kind": "length",
+          "role": "Par\u00e1metro x_body_left",
+          "unit": "nm",
+          "value": -8
+        },
+        "x_body_right": {
+          "dtype": "float",
+          "kind": "length",
+          "role": "Par\u00e1metro x_body_right",
+          "unit": "nm",
+          "value": 8
+        },
+        "x_center": {
+          "dtype": "float",
+          "kind": "length",
+          "role": "Par\u00e1metro x_center",
+          "unit": "nm",
+          "value": 0
+        },
+        "x_left": {
+          "dtype": "float",
+          "kind": "length",
+          "role": "Par\u00e1metro x_left",
+          "unit": "nm",
+          "value": -19
+        },
+        "x_right": {
+          "dtype": "float",
+          "kind": "length",
+          "role": "Par\u00e1metro x_right",
+          "unit": "nm",
+          "value": 17
+        },
+        "y_center": {
+          "dtype": "float",
+          "kind": "length",
+          "role": "Par\u00e1metro y_center",
+          "unit": "nm",
+          "value": -1
+        },
+        "y_left": {
+          "dtype": "float",
+          "kind": "length",
+          "role": "Par\u00e1metro y_left",
+          "unit": "nm",
+          "value": 3
+        },
+        "y_right": {
+          "dtype": "float",
+          "kind": "length",
+          "role": "Par\u00e1metro y_right",
+          "unit": "nm",
+          "value": -3
+        }
+      },
+      "schema_version": "1.0"
+    }
+  },
+  "remote_errors": [],
+  "compatible": true
+}

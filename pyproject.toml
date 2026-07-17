@@ -28,4 +28,4 @@ packages = ["qpot", "core", "ai"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
-
+pythonpath = ["."]

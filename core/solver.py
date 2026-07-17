@@ -18,6 +18,7 @@ import numpy as np
 from scipy.sparse import diags, kron, eye
 from scipy.sparse.linalg import eigsh
 from dataclasses import dataclass
+from functools import lru_cache
 
 # Constantes
 HBAR  = 1.054571817e-34   # J·s
@@ -35,11 +36,58 @@ def lowest_eigsh(H, k: int, v_min_J: float):
     lo usamos como fallback para no pagar la factorización LU cuando no hace falta.
     """
     from scipy.sparse.linalg import ArpackNoConvergence
+    n = H.shape[0]
+    # A wider Krylov subspace is important for symmetric 2D potentials: with
+    # ARPACK's small default subspace, one member of a degenerate pair can be
+    # replaced by a higher state at the requested boundary.  A fixed starting
+    # vector also makes repeated verification runs reproducible.
+    ncv = min(n - 1, max(4 * k + 1, 32))
+    indices = np.arange(1, n + 1, dtype=float)
+    v0 = np.sin(indices * 0.754877666) + np.cos(indices * 0.569840291)
     try:
-        return eigsh(H, k=k, which="SA")
+        return eigsh(H, k=k, which="SA", ncv=ncv, v0=v0)
     except ArpackNoConvergence:
         sigma = v_min_J - abs(v_min_J) * 1e-3 - 1e-25
-        return eigsh(H, k=k, sigma=sigma, which="LM")
+        return eigsh(H, k=k, sigma=sigma, which="LM", ncv=ncv, v0=v0)
+
+
+def _work_state_count(requested: int, dimension: int) -> int:
+    """Compute extra Ritz pairs so a degeneracy at the request boundary is not missed."""
+    requested = min(max(1, int(requested)), dimension - 2)
+    # ARPACK starts from a single vector.  On highly symmetric grids that
+    # vector can have almost no projection on one symmetry sector, so a small
+    # oversampling still misses one member of a degenerate pair.  Eight spare
+    # Ritz pairs proved sufficient for the disk/ring regression matrix while
+    # remaining tiny compared with the N² Hamiltonian.
+    extra = max(8, requested)
+    return min(requested + extra, dimension - 2)
+
+
+@lru_cache(maxsize=4)
+def _kinetic_2d_cached(
+    Nx: int,
+    Ny: int,
+    dx_nm: float,
+    dy_nm: float,
+    m_eff: float,
+):
+    """Reusable sparse kinetic operator; sweeps only rebuild the potential diagonal."""
+    dx = dx_nm * NM
+    dy = dy_nm * NM
+    hbar2_2m = HBAR**2 / (2 * m_eff * M_E)
+
+    def kinetic_1d(size, spacing):
+        return (-hbar2_2m / spacing**2) * diags(
+            [np.ones(size - 1), -2 * np.ones(size), np.ones(size - 1)],
+            [-1, 0, 1], shape=(size, size), format="csr",
+        )
+
+    Tx = kinetic_1d(Nx, dx)
+    Ty = kinetic_1d(Ny, dy)
+    return (
+        kron(Ty, eye(Nx, format="csr"), format="csr")
+        + kron(eye(Ny, format="csr"), Tx, format="csr")
+    )
 
 
 @dataclass
@@ -55,6 +103,9 @@ class SolverResult:
     orthogonality_error: float
     normalization_errors: np.ndarray
     boundary_probabilities: np.ndarray
+    backend: str
+    requested_states: int
+    computed_states: int
 
 
 def solve(
@@ -74,29 +125,9 @@ def solve(
     dx_nm = x_nm[1] - x_nm[0]
     dy_nm = y_nm[1] - y_nm[0]
 
-    # Convertir a SI
-    dx = dx_nm * NM
-    dy = dy_nm * NM
-    m  = m_eff * M_E
-
-    # Prefactor cinético en Joules: ℏ²/(2m)
-    hbar2_2m = HBAR**2 / (2 * m)
-
-    # Operador cinético 1D (diferencias finitas centradas)
-    def kinetic_1d(N, dq):
-        diag_main = -2 * np.ones(N)
-        diag_off  = np.ones(N - 1)
-        T = diags([diag_off, diag_main, diag_off], [-1, 0, 1],
-                  shape=(N, N), format="csr")
-        return (-hbar2_2m / dq**2) * T   # en Joules
-
-    Tx = kinetic_1d(Nx, dx)
-    Ty = kinetic_1d(Ny, dy)
-    Ix = eye(Nx, format="csr")
-    Iy = eye(Ny, format="csr")
-
-    # Hamiltoniano cinético 2D: T = Ty⊗Ix + Iy⊗Tx
-    H_kin = kron(Ty, Ix, format="csr") + kron(Iy, Tx, format="csr")
+    H_kin = _kinetic_2d_cached(
+        Nx, Ny, round(float(dx_nm), 14), round(float(dy_nm), 14), round(float(m_eff), 14)
+    )
 
     # Potencial como diagonal (Joules)
     V_flat = V_eV.flatten() * EV
@@ -106,12 +137,15 @@ def solve(
 
     # Resolver n_states eigenvalores más bajos
     n_req = min(n_states, Nx * Ny - 2)
-    eigenvalues, eigenvectors = lowest_eigsh(H, n_req, float(V_flat.min()))
+    n_work = _work_state_count(n_req, Nx * Ny)
+    eigenvalues, eigenvectors = lowest_eigsh(H, n_work, float(V_flat.min()))
 
     # Ordenar por energía
     idx = np.argsort(eigenvalues)
     eigenvalues  = eigenvalues[idx]
     eigenvectors = eigenvectors[:, idx]
+    eigenvalues = eigenvalues[:n_req]
+    eigenvectors = eigenvectors[:, :n_req]
 
     residuals = []
     h_scale = max(float(np.max(np.abs(H.diagonal()))), 1e-30)
@@ -159,6 +193,9 @@ def solve(
         orthogonality_error=orthogonality_error,
         normalization_errors=np.asarray(normalization_errors),
         boundary_probabilities=np.asarray(boundary_probabilities),
+        backend="scipy-arpack-cpu",
+        requested_states=n_req,
+        computed_states=n_work,
     )
 
 

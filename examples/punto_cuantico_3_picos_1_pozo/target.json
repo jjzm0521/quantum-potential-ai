@@ -1,0 +1,9 @@
+{
+  "description": "Un unico pozo de confinamiento alargado y conectado. Sobre esa cuenca aparecen tres picos positivos de potencial: dos laterales y uno central. El pico central esta rodeado por la parte mas profunda del pozo; no deben existir tres minimos independientes",
+  "features": {
+    "n_wells": 1
+  },
+  "tolerances": {
+    "n_wells": 0
+  }
+}

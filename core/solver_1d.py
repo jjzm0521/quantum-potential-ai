@@ -15,6 +15,7 @@ import numpy as np
 from scipy.sparse import diags
 from scipy.sparse.linalg import eigsh
 from dataclasses import dataclass
+from functools import lru_cache
 
 from .solver import HBAR, M_E, EV, NM, lowest_eigsh
 
@@ -32,6 +33,21 @@ class SolverResult1D:
     orthogonality_error: float
     normalization_errors: np.ndarray
     boundary_probabilities: np.ndarray
+    backend: str
+    requested_states: int
+    computed_states: int
+
+
+@lru_cache(maxsize=8)
+def _kinetic_1d_cached(N: int, dx_nm: float, m_eff: float):
+    dx = dx_nm * NM
+    hbar2_2m = HBAR**2 / (2 * m_eff * M_E)
+    return diags(
+        [(-hbar2_2m / dx**2) * np.ones(N - 1),
+         (2 * hbar2_2m / dx**2) * np.ones(N),
+         (-hbar2_2m / dx**2) * np.ones(N - 1)],
+        [-1, 0, 1], shape=(N, N), format="csr",
+    )
 
 
 def solve_1d(
@@ -46,16 +62,7 @@ def solve_1d(
     """
     N = len(x_nm)
     dx_nm = x_nm[1] - x_nm[0]
-    dx = dx_nm * NM
-    m = m_eff * M_E
-
-    hbar2_2m = HBAR**2 / (2 * m)
-
-    # Operador cinético tridiagonal en Joules
-    diag_main = (2 * hbar2_2m / dx**2) * np.ones(N)
-    diag_off  = (-hbar2_2m / dx**2) * np.ones(N - 1)
-    T = diags([diag_off, diag_main, diag_off], [-1, 0, 1],
-              shape=(N, N), format="csr")
+    T = _kinetic_1d_cached(N, round(float(dx_nm), 14), round(float(m_eff), 14))
 
     # Potencial diagonal (Joules)
     V_J = V_eV * EV
@@ -110,6 +117,9 @@ def solve_1d(
         orthogonality_error=orthogonality_error,
         normalization_errors=np.asarray(normalization_errors),
         boundary_probabilities=np.asarray(boundary_probabilities),
+        backend="scipy-arpack-cpu",
+        requested_states=n_req,
+        computed_states=n_req,
     )
 
 

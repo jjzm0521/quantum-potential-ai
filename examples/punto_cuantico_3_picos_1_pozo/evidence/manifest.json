@@ -1,0 +1,13 @@
+{
+  "case": "punto_cuantico_3_picos_1_pozo",
+  "design_sha256": "45ad406878422412f853c6cc93f3afef9fe33116b45b85aba038f9d55917fcce",
+  "comsol_comparison_sha256": "3c2239b9ea5bbe9ea9903655f60c7724506859cea214c78f4abee46e1aa2365e",
+  "certified_mph": {
+    "filename": "punto-cuantico-3-picos-1-pozo.mph",
+    "sha256": "84ab1f07e08030c7030138a108174e17607e2d5d08ae9d630112130e258ea5f8",
+    "tracked_in_git": false
+  },
+  "comsol_version": "5.6",
+  "maximum_relative_error": 0.002244204495487944,
+  "compatible": true
+}

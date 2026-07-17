@@ -1,0 +1,22 @@
+{
+  "render_inspected": true,
+  "score": 9.3,
+  "design_hash": "c90812dcf28ff20240b4d0f0c91e12f61e02657d378909e602a6cd83f5392666",
+  "matches": [
+    "tres picos positivos claramente separados",
+    "un solo pozo negativo conectado",
+    "pico central rodeado por la depresion mas profunda",
+    "asimetria entre picos laterales conservada"
+  ],
+  "mismatches": [
+    "la imagen no tiene escala espacial ni energetica calibrada"
+  ],
+  "suggestions": [
+    "obtener un perfil AFM para ajustar alturas y anchuras"
+  ],
+  "assumptions": [
+    "el brillo se representa directamente como picos positivos del potencial",
+    "la zona oscura se representa como el pozo negativo común",
+    "GaAs y campo aproximado de 100 nm"
+  ]
+}

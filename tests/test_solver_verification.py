@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from qpot import session, verification
 from qpot.schema import design_hash
 
@@ -75,3 +77,24 @@ def test_stale_agent_assessment_does_not_approve_modified_design(tmp_path, monke
     }))
     report = verification.verify_design(design, n_states=3)
     assert report["target_match"]["ok"] is False
+
+
+def test_2d_solver_preserves_degenerate_disk_states_and_reports_backend(tmp_path, monkeypatch):
+    monkeypatch.setenv(session.SESSION_DIR_ENV, str(tmp_path))
+    design = {
+        "schema_version": "1.0", "dim": 2, "material": "GaAs",
+        "domain": {"L": 80.0, "N": 64},
+        "parameters": {},
+        "pieces": [{
+            "op": "where", "label": "disco",
+            "region": {"op": "disk", "args": {"center": [0, 0], "radius": 22}},
+            "inner": {"op": "constant", "args": {"value": -0.2}},
+            "outer": {"op": "constant", "args": {"value": 0}},
+        }],
+    }
+    _, summary = session.solve_design(design, n_states=6)
+    energies = summary["energies_meV"]
+    assert energies[1] == pytest.approx(energies[2], abs=1e-5)
+    assert summary["backend"] == "scipy-arpack-cpu"
+    assert summary["requested_states"] == 6
+    assert summary["computed_states"] > summary["requested_states"]

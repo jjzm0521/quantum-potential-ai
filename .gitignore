@@ -29,6 +29,9 @@ session/
 workspace/
 
 # Outputs generados
+build/
+dist/
+*.egg-info/
 *.mph
 *.npz
 *.csv

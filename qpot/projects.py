@@ -132,15 +132,20 @@ def export_project(slug: str, output: str | Path | None = None) -> Path:
     path = _project_dir(slug)
     if not path.is_dir():
         raise FileNotFoundError(f"Proyecto '{slug}' no existe.")
-    out = Path(output) if output else workspace_dir() / f"{path.name}.zip"
-    with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+    out = (Path(output) if output else workspace_dir() / f"{path.name}.zip").resolve()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out.with_name(f".{out.name}.tmp")
+    with zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for item in sorted(path.rglob("*")):
-            if item.is_file():
+            # The package may intentionally live under project/exports. Never
+            # include the destination (or its temporary replacement) in itself.
+            if item.is_file() and item.resolve() not in {out, tmp}:
                 zf.write(item, arcname=f"{path.name}/{item.relative_to(path)}")
         provenance = json.dumps({
             "python": sys.version, "exported_at": datetime.now(timezone.utc).isoformat(),
         }, ensure_ascii=False, indent=2)
         zf.writestr(f"{path.name}/provenance.json", provenance)
+    os.replace(tmp, out)
     return out
 
 
@@ -178,4 +183,3 @@ def _atomic_text(path: Path, text: str) -> None:
 
 def _atomic_json(path: Path, data: Any) -> None:
     _atomic_text(path, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
-

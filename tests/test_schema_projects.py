@@ -57,6 +57,16 @@ def test_project_lifecycle_and_reproducible_zip(tmp_path, monkeypatch):
         assert "copia/provenance.json" in zf.namelist()
 
 
+def test_project_export_does_not_include_itself(tmp_path, monkeypatch):
+    monkeypatch.setenv(projects.WORKSPACE_ENV, str(tmp_path / "workspace"))
+    project = projects.create_project("Demo", dim=2, material="GaAs")
+    output = project / "exports" / "demo.zip"
+    bundle = projects.export_project("demo", output)
+    with zipfile.ZipFile(bundle) as zf:
+        assert "demo/exports/demo.zip" not in zf.namelist()
+        assert "demo/design.json" in zf.namelist()
+
+
 def test_atomic_save_keeps_history(tmp_path, monkeypatch):
     monkeypatch.setenv(session.SESSION_DIR_ENV, str(tmp_path))
     session.save_design(session.new_design())

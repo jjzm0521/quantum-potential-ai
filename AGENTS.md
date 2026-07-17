@@ -140,7 +140,8 @@ electrón por dominio) + Estudio de Valor propio:
 - `--format recipe` → receta markdown paso a paso (siempre funciona, sin dependencias).
 - `--format m` → script LiveLink (necesita MATLAB+COMSOL para correrlo).
 - `--format mph` → **archivo .mph nativo** que abre directo en COMSOL **sin MATLAB** (requiere
-  `MPh` + COMSOL; ver versiones en requirements.txt). Si MPh no está, cae a la receta.
+  `MPh` + COMSOL; ver versiones en `pyproject.toml`). Si falla, se bloquea; la receta solo se
+  genera cuando se solicita expresamente `--allow-fallback`.
 
 > ⚠ **Antes de tocar `core/exporter_mph.py` o el flujo del `.mph`, LEE
 > [COMSOL_MPH.md](COMSOL_MPH.md).** Tiene la guía definitiva (matriz Java/MPh/jpype, estructura

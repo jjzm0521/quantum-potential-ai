@@ -49,7 +49,20 @@ def certify(design_path: str | Path, output_dir: str | Path) -> dict[str, Any]:
     _run(["ssh", host, command])
     local_result = out / "comsol-result.json"
     _run(["scp", f"{host}:{remote_result}", str(local_result)])
-    remote = json.loads(local_result.read_text(encoding="utf-8"))
+    return compare_result(design_path, local_result, out)
+
+
+def compare_result(
+    design_path: str | Path,
+    comsol_result_path: str | Path,
+    output_dir: str | Path,
+) -> dict[str, Any]:
+    """Compare a worker result with the Python solver, regardless of transport."""
+    design_path = Path(design_path).resolve()
+    comsol_result_path = Path(comsol_result_path).resolve()
+    out = Path(output_dir).resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    remote = json.loads(comsol_result_path.read_text(encoding="utf-8"))
 
     design = json.loads(design_path.read_text(encoding="utf-8"))
     _, python_summary = session.solve_design(design, n_states=len(remote.get("energies_meV", [])) or 6)
@@ -64,7 +77,10 @@ def certify(design_path: str | Path, output_dir: str | Path) -> dict[str, Any]:
         "comsol_energies_meV": co_e,
         "relative_errors": relative,
         "tolerance": tolerance,
-        "compatible": bool(remote.get("open_ok") and remote.get("solve_ok") and relative
+        "inspection": remote.get("inspection", {}),
+        "remote_errors": remote.get("errors", []),
+        "compatible": bool(remote.get("open_ok") and remote.get("inspection_ok")
+                           and remote.get("solve_ok") and not remote.get("errors") and relative
                            and all(err <= tolerance for err in relative)),
     }
     (out / "comparison.json").write_text(json.dumps(comparison, indent=2) + "\n", encoding="utf-8")

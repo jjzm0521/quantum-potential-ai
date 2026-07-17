@@ -46,6 +46,8 @@ propio Java:
 
 1. **Parámetros globales** (`model.parameter(nombre, expr)`): `m_eff`, `Ldom`, y todos los del
    bloque `parameters` con unidad (`R1 = 16[nm]`, `Vb = 0.27[eV]`, `n = 7`).
+   Nunca definas un parámetro llamado `eV`: ocultaría la unidad incorporada `[eV]` y aplicaría
+   dos veces la conversión a joules.
 2. **Geometría 2D** (`model.create('geometries/geom1', 2)`):
    - `Square` dominio: `.property('size','Ldom')`, `.property('base','center')`.
    - Cada región como entidad:
@@ -56,7 +58,11 @@ propio Java:
        `.property('parname','s')`, `.property('parmax','2*pi')`,
        `.property('coord',[x_expr, y_expr])` — las expresiones usan los **parámetros** (R2, n…).
    - `geom.run()` ⟵ esto hace **Formar unión** (genera los dominios).
-3. **Física = interfaz dedicada** `model.create('physics/schr','SchrodingerEquation','geom1')`:
+3. **Física = interfaz dedicada**
+   `model.create('physics/schr','SchrodingerEquation', geom.tag(), [['psi']])`: MPh/JPype
+   necesita tanto el tag de geometría como la matriz de variables dependientes
+   (`new String[][]{{"psi"}}`). Omitir la matriz selecciona una sobrecarga distinta y termina
+   creando `CoefficientFormPDE` con MPh 1.2.3.
    - **Masa efectiva**: `phys.java.feature('meff1').set('meff', 'm_eff')`.
    - **Deshabilitar el potencial por defecto**: `phys.java.feature('ve1').active(False)`.
    - **Energía potencial por dominio** (ver §3): nodos `ElectronPotentialEnergy` con
@@ -64,7 +70,9 @@ propio Java:
    - Flujo cero (`zf1`) y Valores iniciales (`init1`) quedan por defecto.
 4. **Malla**: `model.create('meshes/mesh1','geom1')`, `autoMeshSize(3)`, `run`.
 5. **Estudio de valor propio**: `study.create('Eigenvalue', name='eigv')`,
-   `.property('neigs', N)`, `.java.set('shift','0')`, `.java.set('eigref','0.1')`.
+   `.property('neigs', N)`, y `shift=min(V)` en eV para obtener los niveles ligados más
+   bajos (usar cero en pozos negativos devuelve estados del continuo cercanos a cero).
+   COMSOL 5.6 no reconoce `eigref` en este feature; no debe emitirse.
 6. **Guardar**: `model.save(path)`; luego `client.disconnect()` **envuelto en try/except**
    (en modo stand-alone lanza "client not connected" PERO el `.mph` ya quedó guardado).
 
@@ -89,8 +97,8 @@ Procedimiento correcto:
    - `where(region, inner, outer)` → **dos** nodos disjuntos: `región` = `inner`, y
      **complemento de la región** = `outer`. (Corona: canal = inner; las dos barreras = outer.)
    - `mask(region, value)` → `región` = `value`; complemento = `0`.
-   - Varias regiones → base en todo + overrides (COMSOL resuelve por **exclusividad**: el nodo
-     posterior se queda con sus dominios), con el default igualmente deshabilitado.
+   - Varias regiones → cada región recibe su nodo y la base se asigna **solo al complemento
+     de la unión**. Los nodos son acumulativos; una base global solapada alteraría `Ve`.
    - Sin regiones (perfil analítico, p. ej. `raw_expr`) → un nodo con `Ve` = la expresión.
 4. **Asignar la selección**: `ve.java.selection().named(<TAG REAL>)`. El tag real se obtiene con
    `nodo.java.tag()`, **no** con el nombre del path que pusiste al crear (ese no es el tag).
