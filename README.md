@@ -137,6 +137,7 @@ El ASUS debe ejecutar `scripts/comsol56_worker.py`. El segundo comando recorre l
 obligatoria (1D, regiones, corona cicloidal, booleanas, zonas disjuntas y barrido). La
 certificación inspecciona el árbol del modelo y exige abrir, resolver y comparar los
 eigenvalores: 1% para potenciales suaves y 3% para fronteras discontinuas.
+La matriz real más reciente aprobó **11/11 casos** en COMSOL 5.6.
 Si SSH no está disponible, copia el repositorio al ASUS y ejecuta allí exactamente la misma
 matriz con `python scripts/comsol56_certification_suite.py --local --out certification-local`.
 Las versiones soportadas están en [COMPATIBILITY.md](COMPATIBILITY.md) y los detalles de la

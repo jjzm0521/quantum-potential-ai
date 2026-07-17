@@ -241,8 +241,13 @@ def export_mph_or_fallback(
 # .mph NATIVO POR GEOMETRÍA + interfaz Schrödinger (schr)  — 2D
 # ===========================================================================
 
-def _mask_points(mask, x, y):
-    """Un punto interior 'profundo' (máx. distancia al borde) por componente conexa."""
+def _mask_points(mask, x, y, min_pixels: int = 4):
+    """One deep interior point per resolved connected component.
+
+    Sub-grid one-to-three-pixel islands occur at cusps/tangent curves because the
+    raster classifier and exact COMSOL geometry use different boundary tolerances.
+    They are not physical domains and would create overlapping Ball selections.
+    """
     import numpy as np
     from scipy import ndimage
     pts: list[tuple[float, float]] = []
@@ -252,6 +257,8 @@ def _mask_points(mask, x, y):
     labels, ncomp = ndimage.label(mask)
     for c in range(1, ncomp + 1):
         comp = labels == c
+        if int(np.count_nonzero(comp)) < min_pixels:
+            continue
         dist = ndimage.distance_transform_edt(comp)
         iy, ix = np.unravel_index(int(np.argmax(dist)), dist.shape)
         pts.append((float(x[ix]), float(y[iy])))
@@ -282,6 +289,59 @@ def _region_inner_outer_points(region: dict, L_nm: float, N: int = 220):
     return _mask_points(mask, x, y), _mask_points(~mask, x, y)
 
 
+def _partition_potential_points(assignments: list[dict], design: dict, L_nm: float,
+                                N: int = 360) -> list[dict]:
+    """Return a complete, exclusive potential partition for COMSOL domains.
+
+    Boolean geometry can split one logical region (especially its complement) into
+    several COMSOL domains. We classify the cells induced by every atomic boundary,
+    keep a deep point in each connected cell, and group the cells by final ``Ve``.
+    """
+    import json as _json
+    import numpy as np
+    from .composer import _evaluate_region
+    from .solver import make_grid
+    from . import comsol_export as cx
+
+    resolved_regions = [_resolve_region(a["region"], design) for a in assignments]
+    atomic_regions: list[dict] = []
+    seen: set[str] = set()
+    for region in resolved_regions:
+        for atom in cx._iter_atomic_regions(region):
+            key = _json.dumps(atom, sort_keys=True)
+            if key not in seen:
+                seen.add(key)
+                atomic_regions.append(atom)
+    if len(atomic_regions) > 62:
+        raise ValueError("La partición COMSOL excede 62 regiones atómicas.")
+
+    x, y, X, Y = make_grid(L_nm, N)
+    assignment_masks = [np.asarray(_evaluate_region(region, X, Y), dtype=bool)
+                        for region in resolved_regions]
+    signatures = np.zeros(X.shape, dtype=np.uint64)
+    for index, atom in enumerate(atomic_regions):
+        atom_mask = np.asarray(_evaluate_region(atom, X, Y), dtype=bool)
+        signatures |= atom_mask.astype(np.uint64) << np.uint64(index)
+
+    grouped: dict[str, list[tuple[float, float]]] = {}
+    for signature in np.unique(signatures):
+        cell = signatures == signature
+        points = _mask_points(cell, x, y)
+        if not points:
+            continue
+        iy, ix = np.argwhere(cell)[0]
+        active = [index for index, mask in enumerate(assignment_masks) if mask[iy, ix]]
+        if len(active) > 1:
+            raise ValueError("La partición contiene potenciales regionales solapados.")
+        expression = assignments[active[0]]["value"] if active else assignments[0]["base"]
+        grouped.setdefault(expression, []).extend(points)
+
+    if not grouped:
+        raise ValueError("No se pudo materializar la partición de potencial COMSOL.")
+    return [{"expression": expression, "points": points}
+            for expression, points in grouped.items()]
+
+
 def export_mph_geometry(
     design: dict,
     material_name: str,
@@ -300,7 +360,13 @@ def export_mph_geometry(
     from . import comsol_export as cx
 
     resolved = resolve_params(design)
-    issues = validate_for_comsol_export(resolved, material_name, m_eff, n_states)
+    issues = validate_for_comsol_export(
+        resolved,
+        material_name,
+        m_eff,
+        n_states,
+        require_analytic_expression=False,
+    )
     issues += cx.exportability_issues(design)
     if issues:
         raise ComsolExportError(issues)
@@ -346,12 +412,16 @@ def export_mph_geometry(
     for tag, atom in atoms:
         op = atom.get("op")
         args = atom.get("args", {})
-        if op in ("epicycloid", "hypocycloid", "super_ellipse", "rose"):
-            xe, ye = cx._parametric_expr(op, args)
-            pc = geom.create("ParametricCurve", name=tag)
-            pc.property("parname", "s")
-            pc.property("parmax", "2*pi")
-            pc.property("coord", [xe, ye])
+        if op == "super_ellipse":
+            xs, ys = cx.superellipse_polygon_coordinates(args)
+            poly = geom.create("Polygon", name=tag)
+            poly.property("x", xs)
+            poly.property("y", ys)
+        elif op in ("epicycloid", "hypocycloid"):
+            xs, ys = cx.cycloid_polygon_coordinates(op, args)
+            poly = geom.create("Polygon", name=tag)
+            poly.property("x", xs)
+            poly.property("y", ys)
         elif op == "disk":
             cxx, cyy = cx._center_tokens(args.get("center", [0.0, 0.0]))
             c = geom.create("Circle", name=tag)
@@ -428,33 +498,13 @@ def export_mph_geometry(
         ve.java.set("Ve_src", "userdef")
         ve.java.set("Ve", ve_expr)
 
-    if len(assignments) == 1:
-        # Reparto DISJUNTO y COMPLETO: región (inner) + su complemento (outer).
-        # Para la corona: inner = canal (dominio 2) = inner_value; outer = barreras
-        # (dominios 1 y 3) = outer_value. Sin solapes, sin dejar dominios fuera.
-        a = assignments[0]
-        region = _resolve_region(a["region"], design)
-        inner_pts, outer_pts = _region_inner_outer_points(region, L_nm)
-        _add_potential("ve_inner", _selection_from_points(inner_pts, "sel_in"), a["value"])
-        _add_potential("ve_outer", _selection_from_points(outer_pts, "sel_out"), a["base"])
-    elif assignments:
-        # Varias regiones disjuntas: la base se asigna sólo al complemento de la unión.
-        # Los nodos ElectronPotentialEnergy son acumulativos en COMSOL, de modo que nunca
-        # ponemos una base global debajo de los valores regionales.
-        union_region = {
-            "op": "union",
-            "regions": [_resolve_region(a["region"], design) for a in assignments],
-        }
-        _inner_pts, outer_pts = _region_inner_outer_points(union_region, L_nm)
-        if outer_pts:
-            _add_potential(
-                "ve_base",
-                _selection_from_points(outer_pts, "sel_base"),
-                assignments[0]["base"],
-            )
-        for k, a in enumerate(assignments, 1):
-            pts = _interior_points(_resolve_region(a["region"], design), L_nm)
-            _add_potential(f"ve_{k}", _selection_from_points(pts, f"sel{k}"), a["value"])
+    if assignments:
+        # Every domain induced by every atomic boundary receives exactly one final Ve.
+        # This includes holes and disconnected exterior pieces in boolean/where regions.
+        zones = _partition_potential_points(assignments, design, L_nm)
+        for index, zone in enumerate(zones, 1):
+            selection = _selection_from_points(zone["points"], f"sel_zone{index}")
+            _add_potential(f"ve_zone_{index}", selection, zone["expression"])
     else:
         # Sin regiones (perfil analítico tipo raw_expr): V como expresión en todo el dominio.
         from .composer import design_to_matlab_expr

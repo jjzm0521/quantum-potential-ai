@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from core import comsol_export
 from core.composer import design_to_matlab_expr_1d
-from core.exporter_mph import _attach_qpot_metadata, _spectral_shift_eV
+from core.exporter_mph import (
+    _attach_qpot_metadata,
+    _partition_potential_points,
+    _spectral_shift_eV,
+)
+from core.harnex import validate_for_comsol_export
 import pytest
 from qpot import session
 from qpot.schema import design_hash
@@ -170,6 +175,87 @@ def test_remote_certification_matrix_is_statically_exportable():
     assert failures == {}
 
 
+@pytest.mark.parametrize("case_name, expected", [
+    ("boolean-composition", {"0[eV]": 2, "-0.2[eV]": 1}),
+    ("cycloidal-crown", {"Vb": 2, "0[eV]": 1}),
+    ("annulus", {"0[eV]": 2, "-0.2[eV]": 1}),
+])
+def test_atomic_partition_covers_holes_and_exterior_components(case_name, expected):
+    from scripts.comsol56_certification_suite import mandatory_cases
+
+    design = mandatory_cases()[case_name]
+    assignments, _ = comsol_export.domain_potentials(design)
+    zones = _partition_potential_points(assignments, design, design["domain"]["L"])
+    assert {zone["expression"]: len(zone["points"]) for zone in zones} == expected
+
+
+def test_superellipse_uses_parametric_polygon_without_duplicate_endpoint():
+    args = {"center": [0, 0], "a": "a", "b": "b", "n": "n"}
+    xs, ys = comsol_export.superellipse_polygon_coordinates(args)
+    assert len(xs) == len(ys) == 128
+    assert (xs[0], ys[0]) != (xs[-1], ys[-1])
+    assert all("a" in value for value in xs)
+    assert all("b" in value for value in ys)
+    geometry = comsol_export.region_to_geometry({"op": "super_ellipse", "args": args}, "reg1")
+    assert geometry["type"] == "Polygon"
+    rotated_x, rotated_y = comsol_export.superellipse_polygon_coordinates({
+        **args, "angle_deg": "theta",
+    })
+    assert all("theta" in value for value in rotated_x + rotated_y)
+
+
+@pytest.mark.parametrize("op", ["epicycloid", "hypocycloid"])
+def test_cycloids_use_closed_parametric_polygons(op):
+    args = {"center": [0, 0], "R": "R", "n": "n"}
+    xs, ys = comsol_export.cycloid_polygon_coordinates(op, args)
+    assert len(xs) == len(ys) == 256
+    assert (xs[0], ys[0]) != (xs[-1], ys[-1])
+    assert all("R" in value and "n" in value for value in xs + ys)
+    geometry = comsol_export.region_to_geometry({"op": op, "args": args}, "reg1")
+    assert geometry["type"] == "Polygon"
+    rotated_x, rotated_y = comsol_export.cycloid_polygon_coordinates(
+        op, {**args, "angle_deg": 30},
+    )
+    assert all("30[deg]" in value for value in rotated_x + rotated_y)
+
+
+def test_rose_is_explicitly_blocked_from_strict_mph_export():
+    design = {
+        "dim": 2, "domain": {"L": 100, "N": 64}, "material": "GaAs",
+        "pieces": [{"op": "mask", "region": {"op": "rose", "args": {
+            "center": [0, 0], "R": 20, "k": 4}}, "value": -0.1}],
+    }
+    assert any("rose" in issue for issue in comsol_export.exportability_issues(design))
+
+
+def test_where_cannot_be_combined_with_other_domain_potentials_yet():
+    design = {
+        "dim": 2, "domain": {"L": 100, "N": 64}, "material": "GaAs",
+        "pieces": [
+            {"op": "where", "region": {"op": "disk", "args": {
+                "center": [0, 0], "radius": 20}},
+             "inner": {"op": "constant", "args": {"value": 0}},
+             "outer": {"op": "constant", "args": {"value": 0.2}}},
+            {"op": "mask", "region": {"op": "disk", "args": {
+                "center": [35, 0], "radius": 5}}, "value": -0.1},
+        ],
+    }
+    assert any("'where' combinada" in issue
+               for issue in comsol_export.exportability_issues(design))
+
+
+def test_geometry_validation_accepts_where_without_weakening_analytic_export():
+    from scripts.comsol56_certification_suite import mandatory_cases
+
+    design = mandatory_cases()["cycloidal-crown"]
+    analytic_issues = validate_for_comsol_export(design, "GaAs", 0.067, 6)
+    geometry_issues = validate_for_comsol_export(
+        design, "GaAs", 0.067, 6, require_analytic_expression=False,
+    )
+    assert any("expresión MATLAB" in issue for issue in analytic_issues)
+    assert geometry_issues == []
+
+
 def test_comsol56_exporter_does_not_emit_unsupported_eigref_property():
     from pathlib import Path
 
@@ -177,3 +263,13 @@ def test_comsol56_exporter_does_not_emit_unsupported_eigref_property():
     assert 'set("eigref"' not in source
     assert 'model.create("physics/schr", "SchrodingerEquation", geom.tag(), [["psi"]])' in source
     assert 'model.create("physics/schr", "SchrodingerEquation", geom.name())' not in source
+
+
+def test_geometry_livelink_template_uses_verified_comsol56_properties():
+    from scripts.comsol56_certification_suite import mandatory_cases
+
+    script = comsol_export.design_to_comsol_m(mandatory_cases()["disk"])
+    assert "meffe_psi_src','userdef" in script
+    assert "meffe_psi','m_eff*me_const" in script
+    assert "autoMeshSize(1)" in script
+    assert "eigref" not in script

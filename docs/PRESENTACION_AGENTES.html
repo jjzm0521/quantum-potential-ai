@@ -545,7 +545,7 @@
     <h2><span class="num">07</span>El camino a COMSOL: lo que costó hacerlo funcionar</h2>
     <p class="lede">Generar un <code>.mph</code> que abra y resuelva sin MATLAB fue la parte más dura del desarrollo. Cada regla de esta sección costó un intento fallido.</p>
 
-    <p>El objetivo: que <code>python -m qpot export --format mph</code> produzca un modelo COMSOL con <strong>geometría por entidades</strong> (no una imagen del potencial: cuadrado de dominio + curvas paramétricas reales), la interfaz de <strong>Ecuación de Schrödinger</strong> con masa efectiva y potencial por dominio, un estudio de valor propio, y los <strong>parámetros nombrados preservados</strong> para poder hacer barridos. Todo vía <code>MPh</code>, el puente Python→JVM→API Java de COMSOL.</p>
+    <p>El objetivo: que <code>python -m qpot export --format mph</code> produzca un modelo COMSOL con <strong>geometría por entidades</strong> (no una imagen del potencial: cuadrado de dominio + contornos poligonales paramétricos cerrados), la interfaz de <strong>Ecuación de Schrödinger</strong> con masa efectiva y potencial por dominio, un estudio de valor propio, y los <strong>parámetros nombrados preservados</strong> para poder hacer barridos. Todo vía <code>MPh</code>, el puente Python→JVM→API Java de COMSOL.</p>
 
     <h3>Los tres problemas que hubo que resolver</h3>
     <div class="grid3">
@@ -598,16 +598,16 @@
     <h3>Estructura del modelo generado (orden obligatorio)</h3>
     <ol class="list">
       <li><strong>Parámetros globales</strong> con unidades: <code>R1 = 12[nm]</code>, <code>R2 = 28[nm]</code>, <code>n = 7</code>, <code>Vb = 0.228[eV]</code>, <code>m_eff</code>, <code>Ldom</code>.</li>
-      <li><strong>Geometría 2D</strong>: Square de dominio + cada región como entidad (<code>Circle</code>, <code>Ellipse</code>, <code>Rectangle</code>, y <code>ParametricCurve</code> con x(s), y(s) <em>en función de los parámetros</em> para epicicloides/hipocicloides/superelipses) + Formar unión.</li>
+      <li><strong>Geometría 2D</strong>: Square de dominio + cada región como entidad (<code>Circle</code>, <code>Ellipse</code>, <code>Rectangle</code> y <code>Polygon</code> cerrado con vértices <em>en función de los parámetros</em> para epicicloides/hipocicloides/superelipses) + Formar unión.</li>
       <li><strong>Física</strong>: interfaz <code>SchrodingerEquation</code> — masa efectiva <code>m_eff</code>, default <code>ve1</code> deshabilitado, un nodo <code>ElectronPotentialEnergy</code> por zona con su Ball/Union selection.</li>
-      <li><strong>Malla</strong> automática fina + <strong>Estudio de valor propio</strong> (<code>neigs</code>, shift 0).</li>
+      <li><strong>Malla</strong> automática fina + <strong>Estudio de valor propio</strong> (<code>neigs</code>, shift calculado desde el mínimo de V).</li>
       <li><strong>Guardar</strong> — y envolver <code>client.disconnect()</code> en try/except: en modo standalone lanza un error <em>después</em> de que el .mph ya quedó en disco (ruido, no fallo).</li>
     </ol>
 
     <p>Gotchas finos de jpype que costaron intentos: los enteros ambiguos exigen <code>JInt(2)</code> (si no, <em>"Ambiguous overloads"</em>); las selecciones deben referenciarse por el <strong>tag real</strong> que devuelve <code>nodo.java.tag()</code>, no por el nombre con que las creaste.</p>
 
     <div class="callout teal"><b>Verificación sin COMSOL</b>
-    Un <code>.mph</code> es un ZIP: <code>test_mph.py</code> (test de regresión, no necesita COMSOL) inspecciona <code>dmodel.xml</code> y verifica que la interfaz sea <code>SchrodingerEquation</code>, que <code>ve1</code> diga <code>DISABLED</code>, que las curvas paramétricas usen los parámetros, y que el reparto región/complemento sea disjunto y completo. Además <code>qpot verify</code> chequea solapes de zonas (<code>zone_overlap</code>) desde el propio Design. Todo el conocimiento quedó documentado en <code>COMSOL_MPH.md</code> — la "guía definitiva" que cualquier agente futuro debe leer antes de tocar el exportador.</div>
+    Un <code>.mph</code> es un ZIP: <code>test_mph.py</code> (test de regresión, no necesita COMSOL) inspecciona <code>dmodel.xml</code> y verifica que la interfaz sea <code>SchrodingerEquation</code>, que <code>ve1</code> diga <code>DISABLED</code>, que los polígonos paramétricos conserven los parámetros, y que la partición atómica sea disjunta y completa. Además <code>qpot verify</code> chequea solapes de zonas (<code>zone_overlap</code>) desde el propio Design. Todo el conocimiento quedó documentado en <code>COMSOL_MPH.md</code> — la "guía definitiva" que cualquier agente futuro debe leer antes de tocar el exportador.</div>
   </div>
 </section>
 <div class="wrap"><hr class="sep"></div>

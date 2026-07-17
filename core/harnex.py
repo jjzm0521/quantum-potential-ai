@@ -96,6 +96,8 @@ def validate_for_comsol_export(
     material_name: str,
     m_eff: float,
     n_states: int,
+    *,
+    require_analytic_expression: bool = True,
 ) -> list[str]:
     """
     Chequeos duros antes de llamar a `export_mph`. Devuelve lista de issues;
@@ -149,18 +151,21 @@ def validate_for_comsol_export(
     # Si hay header harnex, validarlo también
     issues += validate_harnex_header(design)
 
-    # El composer debe poder construir la expresión MATLAB
-    try:
-        if dim == 1:
-            from .composer import design_to_matlab_expr_1d
-            expr_str = design_to_matlab_expr_1d(design)
-        else:
-            from .composer import design_to_matlab_expr
-            expr_str = design_to_matlab_expr(design)
-        if not isinstance(expr_str, str) or not expr_str.strip():
-            issues.append("design_to_matlab_expr produjo expresión vacía.")
-    except Exception as e:
-        issues.append(f"No se pudo construir expresión MATLAB para COMSOL: {e}")
+    # The analytic exporter must prove its expression. The native geometry exporter
+    # validates region translation and exclusive domain coverage independently, so
+    # requiring a MATLAB expression here would incorrectly reject valid `where` DSL.
+    if require_analytic_expression:
+        try:
+            if dim == 1:
+                from .composer import design_to_matlab_expr_1d
+                expr_str = design_to_matlab_expr_1d(design)
+            else:
+                from .composer import design_to_matlab_expr
+                expr_str = design_to_matlab_expr(design)
+            if not isinstance(expr_str, str) or not expr_str.strip():
+                issues.append("design_to_matlab_expr produjo expresión vacía.")
+        except Exception as e:
+            issues.append(f"No se pudo construir expresión MATLAB para COMSOL: {e}")
 
     return issues
 

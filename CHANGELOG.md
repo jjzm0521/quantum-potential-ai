@@ -11,3 +11,6 @@
 - Solver 2D reproducible con sobrecálculo de estados para preservar degeneraciones.
 - Caché acotada de operadores cinéticos y metadatos auditables de backend/coste.
 - Validación real Python–COMSOL 5.6 del disco con error máximo inferior a 0.3%.
+- Certificación COMSOL 5.6 completa: 11/11 casos obligatorios aprobados.
+- Partición atómica de dominios para booleanas y `where`, sin cobertura omitida o duplicada.
+- Superelipses, epicicloides e hipocicloides como polígonos paramétricos cerrados y barribles.

@@ -54,21 +54,22 @@ propio Java:
      - `Circle`: `.property('r', R)`, `.property('pos',[cx,cy])`, `.property('base','center')`.
      - `Ellipse`: `.property('semiaxes',[a,b])`, `pos`, `base`.
      - `Rectangle`: `.property('size',[Lx,Ly])`, `pos`, `base`.
-     - `ParametricCurve` (epicicloide/hipocicloide/súper-elipse/rosa):
-       `.property('parname','s')`, `.property('parmax','2*pi')`,
-       `.property('coord',[x_expr, y_expr])` — las expresiones usan los **parámetros** (R2, n…).
+     - `Polygon` paramétrico (epicicloide/hipocicloide/súper-elipse): arrays cerrados de
+       vértices simbólicos que conservan **R, a, b y n**. `ParametricCurve` no divide el
+       cuadrado en dominios sólidos de forma fiable en COMSOL 5.6.
    - `geom.run()` ⟵ esto hace **Formar unión** (genera los dominios).
 3. **Física = interfaz dedicada**
    `model.create('physics/schr','SchrodingerEquation', geom.tag(), [['psi']])`: MPh/JPype
    necesita tanto el tag de geometría como la matriz de variables dependientes
    (`new String[][]{{"psi"}}`). Omitir la matriz selecciona una sobrecarga distinta y termina
    creando `CoefficientFormPDE` con MPh 1.2.3.
-   - **Masa efectiva**: `phys.java.feature('meff1').set('meff', 'm_eff')`.
+   - **Masa efectiva**: `meffe_psi_src='userdef'` y
+     `meffe_psi='m_eff*me_const'`.
    - **Deshabilitar el potencial por defecto**: `phys.java.feature('ve1').active(False)`.
    - **Energía potencial por dominio** (ver §3): nodos `ElectronPotentialEnergy` con
      `Ve_src='userdef'` y `Ve=<expr>`.
    - Flujo cero (`zf1`) y Valores iniciales (`init1`) quedan por defecto.
-4. **Malla**: `model.create('meshes/mesh1','geom1')`, `autoMeshSize(3)`, `run`.
+4. **Malla**: `model.create('meshes/mesh1','geom1')`, `autoMeshSize(1)`, `run`.
 5. **Estudio de valor propio**: `study.create('Eigenvalue', name='eigv')`,
    `.property('neigs', N)`, y `shift=min(V)` en eV para obtener los niveles ligados más
    bajos (usar cero en pozos negativos devuelve estados del continuo cercanos a cero).
@@ -88,8 +89,9 @@ Procedimiento correcto:
 1. **Deshabilita `ve1`** (el default armónico). Sin esto, nada más importa.
 2. **Calcula zonas por puntos interiores reales** (robusto a la numeración de dominios de
    COMSOL, que no se conoce al generar el script):
-   - Evalúa la **máscara** de cada región sobre una grilla.
-   - Por cada **componente conexa**, toma el punto más profundo (máx. `distance_transform_edt`).
+   - Evalúa todas las **regiones atómicas** sobre una grilla y clasifica cada celda por su
+     firma de pertenencia. Así un hueco y el exterior siguen siendo dominios distintos.
+   - Por cada **componente conexa de la partición atómica**, toma el punto más profundo.
    - Crea una **Ball selection** de dominios en ese punto:
      `entitydim = JInt(2)`, `posx/posy = '<x>[nm]'`, `r = '0.5[nm]'`, `condition = 'intersects'`.
    - Si una zona tiene varias componentes → varias Balls + una **Union selection**.
@@ -116,7 +118,7 @@ Procedimiento correcto:
 - El renglón rojo *"The client is not connected to a server"* al FINAL es ruido del cierre del
   JVM, **no** un fallo (si antes salió "guardado en …").
 - Crea las features con su tipo COMSOL exacto: `SchrodingerEquation`, `EffectiveMass` (`meff1`),
-  `ElectronPotentialEnergy` (props `Ve_src`, `Ve`), `Square`/`Circle`/`Ellipse`/`ParametricCurve`,
+  `ElectronPotentialEnergy` (props `Ve_src`, `Ve`), `Square`/`Circle`/`Ellipse`/`Polygon`,
   `Eigenvalue`. (Identificadores tomados de un `.mph` real de COMSOL 5.6.)
 
 ---
@@ -126,7 +128,7 @@ Procedimiento correcto:
 Un `.mph` es un ZIP; abre `dmodel.xml` y comprueba:
 
 - [ ] `op="SchrodingerEquation"` presente (no `CoefficientFormPDE`).
-- [ ] `ParametricCurve` con las expresiones x(s), y(s) en parámetros (R2, n…).
+- [ ] `Polygon` cicloidal/superelíptico con vértices simbólicos en parámetros (R2, n, a, b…).
 - [ ] El nodo `ElectronPotentialEnergy` por defecto (`ve1`) tiene `entityFlags` con **`DISABLED`**.
 - [ ] Hay **un nodo de potencial por zona**, con `Ve_src='userdef'` y el `Ve` correcto
       (p. ej. canal `0[eV]`, barreras `Vb`), cada uno con su selección (`Ball`/`Union`).
